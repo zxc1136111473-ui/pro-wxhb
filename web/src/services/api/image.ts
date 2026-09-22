@@ -686,6 +686,65 @@ function parseGeminiToolResponse(payload: GeminiPayload): ToolResponseResult {
     return { content, toolCalls };
 }
 
+/**
+ * Gemini 生图模型走 OpenAI 兼容反代时，很多中转/自建网关（如 GeminiWeb2API、
+ * New API + geminiweb 上游）不提供 /v1/images/generations 端点 —— gemini-image
+ * （Nano Banana）的生图要走 /v1/chat/completions，图片以 markdown 形式
+ * `![image](data:image/...;base64,...)` 嵌在 message.content 里。
+ *
+ * 这里兜底：当模型名是 gemini-*image 且 apiFormat 不是原生 gemini 时，
+ * 用 chat/completions 调用并从响应 content 里解析出 base64 图片。
+ * 纯前端实现，不需要用户配自定义脚本。
+ */
+function isGeminiImageViaChatModel(model: string, apiFormat?: string): boolean {
+    if (apiFormat === "gemini") return false; // 原生 gemini 走官方 generateContent
+    if (!model) return false;
+    const m = model.toLowerCase();
+    return m.startsWith("gemini-") && m.includes("image") && !m.includes("video") && !m.includes("canvas");
+}
+
+function extractGeminiChatImages(content: unknown): string[] {
+    if (typeof content !== "string") return [];
+    const urls: string[] = [];
+    // markdown 图片: ![alt](data:image/...;base64,...)
+    const markdownRe = /!\[[^\]]*\]\((data:image\/[^)]+)\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = markdownRe.exec(content)) !== null) urls.push(match[1]);
+    if (urls.length) return urls;
+    // 裸 data URL（部分上游直接返回 data URL 文本）
+    const bareRe = /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g;
+    while ((match = bareRe.exec(content)) !== null) urls.push(match[0]);
+    return urls;
+}
+
+async function requestGeminiImageViaChat(config: AiConfig, prompt: string, references: ReferenceImage[], count: number, options?: RequestOptions) {
+    const requests = Array.from({ length: count }, async () => {
+        const parts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [{ type: "text", text: prompt }];
+        for (const image of references) {
+            parts.push({ type: "image_url", image_url: { url: await imageToDataUrl(image) } });
+        }
+        const response = await axios.post(
+            aiApiUrl(config, "/chat/completions"),
+            {
+                model: config.model,
+                messages: [{ role: "user", content: parts.length > 1 ? parts : prompt }],
+                stream: false,
+            },
+            { headers: aiHeaders(config, "application/json"), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS },
+        );
+        const content = response.data?.choices?.[0]?.message?.content;
+        const urls = extractGeminiChatImages(content);
+        if (!urls.length) {
+            const snippet = typeof content === "string" ? content.slice(0, 300) : JSON.stringify(response.data).slice(0, 300);
+            throw new Error(`gemini-image chat 接口未返回图片：${snippet}`);
+        }
+        return urls[0];
+    });
+    const images = (await Promise.all(requests)).flat();
+    if (!images.length) throw new Error(apiText("geminiNoImage"));
+    return images.map((dataUrl) => ({ id: nanoid(), dataUrl }));
+}
+
 async function requestGeminiImages(config: AiConfig, prompt: string, references: ReferenceImage[], count: number, options?: RequestOptions) {
     const requests = Array.from({ length: count }, () => requestGeminiImagesOnce(config, prompt, references, options));
     return (await Promise.all(requests)).flat();
@@ -753,6 +812,15 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
+    // gemini 生图模型走 OpenAI 兼容反代（GeminiWeb/New API 等）时，上游不提供
+    // /images/generations，改走 /chat/completions 并解析 markdown base64。
+    if (isGeminiImageViaChatModel(requestConfig.model, requestConfig.apiFormat)) {
+        try {
+            return await requestGeminiImageViaChat(requestConfig, prompt, [], n, options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, apiText("requestFailed")));
+        }
+    }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
@@ -811,6 +879,15 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (requestConfig.apiFormat === "gemini") {
         try {
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, apiText("requestFailed")));
+        }
+    }
+
+    // gemini 生图模型走 OpenAI 兼容反代：参考图编辑也走 /chat/completions
+    if (isGeminiImageViaChatModel(requestConfig.model, requestConfig.apiFormat)) {
+        try {
+            return await requestGeminiImageViaChat(requestConfig, requestPrompt, references, n, options);
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
