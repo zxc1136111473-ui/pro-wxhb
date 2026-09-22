@@ -350,10 +350,26 @@ https_wizard() {
     printf '\n# zfc-infinite-canvas\n%s\n# /zfc-infinite-canvas\n' "$block" | $SUDO tee -a "$caddyfile" >/dev/null
   fi
 
-  $SUDO caddy validate --config "$caddyfile" >/dev/null 2>&1 \
-    || { warn "Caddyfile 校验没过，看看 /etc/caddy/Caddyfile"; $SUDO caddy validate --config "$caddyfile" 2>&1 | tail -5 || true; }
-  $SUDO systemctl reload caddy 2>/dev/null || $SUDO caddy reload --config "$caddyfile" 2>/dev/null || true
+  # 让 Caddy 加载新配置。★ 用 restart 而不是 reload：caddy 的 systemd unit
+  # 很多发行版没配 ExecReload，reload 会静默失败（"Unit cannot be reloaded"），
+  # 配置就永远不生效。restart 一定重新读配置。失败必须报出来，不许吞。
+  if ! $SUDO systemctl restart caddy 2>/dev/null; then
+    # systemd 起不来时退回直接跑 caddy（前台验证，错误可见）
+    if ! $SUDO caddy start --config "$caddyfile" 2>/tmp/zfc-caddy.err; then
+      warn "Caddy 起不来："; $SUDO cat /tmp/zfc-caddy.err 2>/dev/null | tail -10 || true
+      die "Caddy 配置没生效，先把上面的报错解决（多半是 Caddyfile 或端口占用）"
+    fi
+  fi
   sleep 3
+
+  # 等证书签发（Let's Encrypt 一般十几秒，最多等 90 秒）
+  local tries=0
+  while [ $tries -lt 30 ]; do
+    if curl -fsS -o /dev/null --max-time 8 "https://$domain/" 2>/dev/null; then
+      break
+    fi
+    tries=$((tries + 1)); sleep 3
+  done
 
   # 验一下
   if curl -fsS -o /dev/null --max-time 15 "https://$domain/" 2>/dev/null; then
