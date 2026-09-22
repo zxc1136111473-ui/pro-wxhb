@@ -38,7 +38,8 @@ ZFC_ACTION=""        # install|update|uninstall|check|port|plugins|https|data|me
 ZFC_DIR=""           # --dir：安装目录（默认脚本所在目录，或 /opt/comfyui）
 ZFC_PORT=""          # --port：监听端口（默认 8188）
 ZFC_GIT=""           # --git：源码仓库地址（默认官方主仓库）
-ZFC_PLUGINS=""       # --plugins：逗号分隔要预装的插件（见 do_plugins）
+ZFC_PLUGINS=""       # --plugins-set：逗号分隔要预装的插件组号（1,2 / all）
+ZFC_BACKUP_FILE=""   # --restore 后面的备份文件路径
 
 json_out() {
   [ "$ZFC_JSON" = "1" ] || return 0
@@ -228,49 +229,85 @@ run_container() {
 
 # ── 插件管理 ───────────────────────────────────────────────────────────────
 # 预装插件 = 把仓库 clone 进 data/custom_nodes/。卸载 = 删目录。
-PLUGIN_DEFS="
+# 按「API 客户端模式（无 GPU）」精选：不做本地推理，所以不推荐 ControlNet/
+# Impact-Pack 那类依赖本地模型的插件；这些是纯界面/编排/API 增强。
+PLUGIN_CORE="
 ComfyUI-Manager|https://github.com/ltdrdata/ComfyUI-Manager.git
 ComfyUI-Global-Translation|https://github.com/a63976659/ComfyUI-Global-Translation.git
 ComfyUI-APIimage|https://github.com/AyinMostima/ComfyUI-APIimage.git
+"
+PLUGIN_TOOLS="
 ComfyUI-Custom-Scripts|https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git
 ComfyUI_essentials|https://github.com/cubiq/ComfyUI_essentials.git
+ComfyUI-Logic|https://github.com/theUpsider/ComfyUI-Logic.git
 "
-
+PLUGIN_EXTRA="
+ComfyUI-Impact-Pack|https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
+ComfyUI-VideoHelperSuite|https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
+"
 plugin_install() {
   local name="$1" url="$2"
   if [ -d "$APP_DIR/data/custom_nodes/$name" ]; then
-    say "插件 $name 已装，跳过"
+    say "  插件 $name 已装，跳过"
     return 0
   fi
-  say "安装插件 $name …"
+  say "  安装插件 $name …"
   git clone --depth 1 "$url" "$APP_DIR/data/custom_nodes/$name" 2>/dev/null \
-    || warn "插件 $name 安装失败（网络？）"
+    || warn "  插件 $name 安装失败（网络？）"
+}
+
+plugin_install_set() {
+  # 参数：多行 "name|url" 字符串（PLUGIN_CORE / PLUGIN_TOOLS / PLUGIN_EXTRA）
+  # ★ read 读完 EOF 返回非零会让函数返回 1，被 set -e 杀脚本 —— 必须显式 return 0
+  local name url
+  while IFS='|' read -r name url; do
+    [ -n "$name" ] && plugin_install "$name" "$url"
+  done <<< "$1"
+  return 0
 }
 
 do_plugins() {
   docker_ok || die "Docker 没就绪"
+  # 非交互：--plugins-set 1,2 或 all
+  if [ -n "${ZFC_PLUGINS:-}" ]; then
+    for want in ${ZFC_PLUGINS//,/ }; do
+      case "$want" in
+        1) plugin_install_set "$PLUGIN_CORE" ;;
+        2) plugin_install_set "$PLUGIN_TOOLS" ;;
+        3) plugin_install_set "$PLUGIN_EXTRA" ;;
+        all) plugin_install_set "$PLUGIN_CORE"; plugin_install_set "$PLUGIN_TOOLS"; plugin_install_set "$PLUGIN_EXTRA" ;;
+        *) warn "未知组号 $want（用 1/2/3 或 all）" ;;
+      esac
+    done
+    askyn "重启容器让插件生效？" "y" && run_container
+    json_out "plugins" "$ZFC_PLUGINS"
+    return 0
+  fi
   say ""
   say "  ${BLD}插件管理${RST}（装到 $APP_DIR/data/custom_nodes/，重启容器生效）"
   say ""
-  say "  1) 装【必备三件套】Manager + 汉化 + APIimage（接反代生图）"
-  say "  2) 装【进阶工具】Custom-Scripts + essentials"
-  say "  3) 自定义插件（填 git 地址）"
-  say "  4) 列出已装插件"
-  say "  5) 卸载插件（填名字）"
+  say "  1) 必备三件套：Manager + 汉化 + APIimage（接反代生图）"
+  say "  2) 进阶工具：Custom-Scripts + essentials + Logic 节点"
+  say "  3) 本地模型增强：Impact-Pack + VideoHelperSuite（要 GPU）"
+  say "  4) 全部装（1+2+3）"
+  say "  5) 自定义插件（填 git 地址）"
+  say "  6) 列出已装插件"
+  say "  7) 卸载插件（填名字）"
   say "  0) 返回"
   ask WHAT "选一个" "1"
   case "$WHAT" in
-    1) plugin_install "ComfyUI-Manager" "https://github.com/ltdrdata/ComfyUI-Manager.git"
-       plugin_install "ComfyUI-Global-Translation" "https://github.com/a63976659/ComfyUI-Global-Translation.git"
-       plugin_install "ComfyUI-APIimage" "https://github.com/AyinMostima/ComfyUI-APIimage.git" ;;
-    2) plugin_install "ComfyUI-Custom-Scripts" "https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git"
-       plugin_install "ComfyUI_essentials" "https://github.com/cubiq/ComfyUI_essentials.git" ;;
-    3) ask PNAME "插件目录名（如 MyNode）" ""
+    1) plugin_install_set "$PLUGIN_CORE" ;;
+    2) plugin_install_set "$PLUGIN_TOOLS" ;;
+    3) plugin_install_set "$PLUGIN_EXTRA" ;;
+    4) plugin_install_set "$PLUGIN_CORE"
+       plugin_install_set "$PLUGIN_TOOLS"
+       plugin_install_set "$PLUGIN_EXTRA" ;;
+    5) ask PNAME "插件目录名（如 MyNode）" ""
        ask PURL "Git 仓库地址" ""
        [ -n "$PNAME" ] && [ -n "$PURL" ] || die "名字和地址都要给"
        plugin_install "$PNAME" "$PURL" ;;
-    4) say ""; ls -1 "$APP_DIR/data/custom_nodes/" 2>/dev/null | grep -v '^$' || say "（空）" ;;
-    5) ask PNAME2 "插件目录名" ""
+    6) say ""; ls -1 "$APP_DIR/data/custom_nodes/" 2>/dev/null | grep -v '^$' || say "（空）" ;;
+    7) ask PNAME2 "插件目录名" ""
        [ -n "$PNAME2" ] || die "给个名字"
        rm -rf "$APP_DIR/data/custom_nodes/$PNAME2"
        ok "已删除插件 $PNAME2" ;;
@@ -278,6 +315,46 @@ do_plugins() {
   esac
   askyn "重启容器让插件生效？" "y" && run_container
   json_out "plugins" "done"
+}
+
+# ── 备份 / 恢复 ─────────────────────────────────────────────────────────────
+# 备份什么：data/（插件+模型+输出+输入）+ .install.conf（端口/源码路径）。
+# 源码 app/ 是 git 仓库，不打包（重新 git clone 即可，体积大）。
+do_backup() {
+  docker_ok || true
+  local dest="${1:-}"
+  if [ -z "$dest" ]; then
+    dest="$APP_DIR/backups/comfyui-$(date +%Y%m%d-%H%M%S).tar.gz"
+  fi
+  mkdir -p "$(dirname "$dest")"
+  say "备份数据目录（data/ + 配置）到 $dest …"
+  tar czf "$dest" -C "$APP_DIR" \
+    --exclude='backups' \
+    data .install.conf 2>/dev/null \
+    || die "备份失败"
+  local size
+  size="$(/bin/ls -lh "$dest" | awk '{print $5}')"
+  ok "备份完成（$size）：$dest"
+  json_out "backup" "$dest"
+}
+
+do_restore() {
+  docker_ok || true
+  local srcf="${1:-}"
+  if [ -z "$srcf" ]; then
+    say ""
+    ls -1t "$APP_DIR/backups/"*.tar.gz 2>/dev/null | head -10 || true
+    ask srcf "把备份文件完整路径贴过来（上面列表里挑一个）" ""
+  fi
+  [ -n "$srcf" ] && [ -f "$srcf" ] || die "备份文件不存在：$srcf"
+  # 先停容器再恢复，避免写一半
+  docker_ok && $DOCKER rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  say "恢复 $srcf …"
+  tar xzf "$srcf" -C "$APP_DIR" 2>/dev/null || die "恢复失败（备份文件坏了？）"
+  ok "数据已恢复"
+  # 恢复后按备份里的端口/源码路径重新拉起
+  run_container
+  json_out "restore" "$srcf"
 }
 
 # ── 数据说明 ───────────────────────────────────────────────────────────────
@@ -394,6 +471,9 @@ while [ $# -gt 0 ]; do
     --dir)       ZFC_DIR="${2:?--dir 后面要给个目录}"; shift ;;
     --git)       ZFC_GIT="${2:?--git 后面要给仓库地址}"; shift ;;
     --plugins)   ZFC_ACTION="plugins" ;;
+    --plugins-set) ZFC_PLUGINS="${2:?--plugins-set 后面要给组号，如 1,2 或 all}"; ZFC_ACTION="plugins"; shift ;;
+    --backup)    ZFC_ACTION="backup" ;;
+    --restore)   ZFC_ACTION="restore"; ZFC_BACKUP_FILE="${2:-}"; [ $# -gt 1 ] && shift ;;
     -y)          ZFC_YES=1 ;;
     --json)      ZFC_JSON=1 ;;
     --menu)      ZFC_ACTION="menu" ;;
@@ -407,6 +487,9 @@ while [ $# -gt 0 ]; do
       say "  --check             体检 + 看访问地址"
       say "  --uninstall         卸载（加 --purge 连目录一起删）"
       say "  --plugins           插件管理"
+      say "  --plugins-set <n>   非交互装插件组（1,2 或 all）"
+      say "  --backup            备份数据（data/ + 配置）"
+      say "  --restore           恢复备份（加文件路径参数）"
       say ""
       say "安装选项："
       say "  --dir <目录>        安装目录（默认脚本所在目录）"
@@ -441,6 +524,8 @@ hr
 if [ "$ZFC_ACTION" = "uninstall" ]; then do_uninstall "$PURGE"; exit 0; fi
 if [ "$ZFC_ACTION" = "check" ]; then do_check && exit 0 || exit $?; fi
 if [ "$ZFC_ACTION" = "plugins" ]; then do_plugins; exit 0; fi
+if [ "$ZFC_ACTION" = "backup" ]; then do_backup "${ZFC_BACKUP_FILE:-}"; exit 0; fi
+if [ "$ZFC_ACTION" = "restore" ]; then do_restore "${ZFC_BACKUP_FILE:-}"; exit 0; fi
 if [ "$ZFC_ACTION" = "update" ]; then
   docker_ok || die "Docker 没就绪"
   local src2; src2="$(state_read src '')"
@@ -470,7 +555,9 @@ if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
   say "  5) 配 HTTPS 提示（共享机复用香水商城 Caddy）"
   say "  6) 插件管理（Manager / 汉化 / APIimage / 自定义）"
   say "  7) 数据说明（源码在哪、怎么改代码、怎么接反代）"
-  say "  8) ${RED}卸载${RST}"
+  say "  8) ${BLD}一键备份${RST}（插件+模型+输出+配置 → backups/）"
+  say "  9) 一键恢复${RST}（从备份文件还原数据并重启）"
+  say "  10) ${RED}卸载${RST}"
   say "  l) 看容器日志"
   say "  r) 重启容器"
   say "  0) 退出"
@@ -499,11 +586,13 @@ if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
     5) do_https_hint; exit 0 ;;
     6) do_plugins; exit 0 ;;
     7) do_data_info; exit 0 ;;
-    8) say ""
-       say "  a) 卸载但${GRN}保留目录${RST}（容器停掉，目录留着）"
-       say "  b) 卸载并${RED}删掉整个目录${RST}（源码/插件/数据全没了）"
-       ask UW "选一个" "a"
-       do_uninstall "$([ "$UW" = "b" ] && echo 1 || echo 0)"; exit 0 ;;
+    8) do_backup; exit 0 ;;
+    9) do_restore; exit 0 ;;
+    10) say ""
+        say "  a) 卸载但${GRN}保留目录${RST}（容器停掉，目录留着）"
+        say "  b) 卸载并${RED}删掉整个目录${RST}（源码/插件/数据全没了）"
+        ask UW "选一个" "a"
+        do_uninstall "$([ "$UW" = "b" ] && echo 1 || echo 0)"; exit 0 ;;
     l|L) $DOCKER logs --tail 50 "$CONTAINER" 2>&1 || true; exit 0 ;;
     r|R) run_container; exit 0 ;;
     0) exit 0 ;;
