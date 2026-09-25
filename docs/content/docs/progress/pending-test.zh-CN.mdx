@@ -108,7 +108,7 @@ Canvas Agent 配置权限
 - ComfyUI 部署套件菜单 5「配 HTTPS + 访问密码」：输入的密码不应回显（要求输两遍），也不应出现在 `ps` 里；Caddy 容器不在时应直接报错退出，不打印无密码的片段；应打印带 `basic_auth` 哈希的 Caddy 站点片段，贴进香水商城 Caddyfile 并 reload 后，域名访问要先输入账号密码。选择只给 Caddy 访问后，`docker ps` 端口应显示 `172.18.0.1:8188->8188`，`http://服务器IP:8188` 直连不通、域名正常；再进菜单 5 可改回；香水商城网络停掉时菜单 R / 2 / 9 都应报「绑定地址不在本机」，且不拉代码、不删旧容器；这时进菜单 5 第一步就能改回所有网卡。体检（菜单 3）和启动探活应在两种模式下都正常。
 - ComfyUI 部署套件数据与更新：网页里保存的工作流应落在 `data/user/`，一键备份包含它，换目录恢复后工作流还在（旧版的工作流在 `app/user/`，需要手动搬）。临时执行 `git -C data/custom_nodes/ComfyUI-Global-Translation remote set-url origin https://invalid.invalid/x.git` 再跑菜单 2，应提示该插件「没更新成功」，并打印 git 的原始报错，结尾显示「更新完成，但上面有要处理的（看 ! 开头的提示）」，而不是直接显示「更新完成」；测完用 `remote set-url origin https://github.com/a63976659/ComfyUI-Global-Translation.git` 改回。
 - ComfyUI 部署套件菜单 11「测试反代」：填对 New API 根地址应显示连通；地址多带 `/v1` 应提示 404；地址写成 127.0.0.1 应提示连不上并给出原因。输入令牌（不回显）后应列出名字像出图的模型，令牌错误应提示无效。
-- ComfyUI 部署套件日志与重启：`l` 选 3 应只显示本次启动的插件加载表和报错；`r` 只做 docker restart（Manager 现场装的包不丢），`R` 删容器重建；`docker inspect comfyui` 的 LogConfig 应为 json-file、max-size=10m、max-file=3。
+- ComfyUI 部署套件日志与重启：`l` 选 3 应只显示本次启动的插件加载表和报错；`r` 只做 docker restart（Manager 现场装的包不丢），`R` 删容器重建；重建后 `docker inspect -f '{{.Config.StopSignal}}' comfyui` 应为 SIGINT，`r` 约 1 秒内完成、日志里有 `Stopped server`；`docker inspect comfyui` 的 LogConfig 应为 json-file、max-size=10m、max-file=3。
 - ComfyUI 部署套件菜单 5 自检：Caddy 容器能访问 `172.18.0.1:端口` 时显示 ✓ 且改绑默认 y，访问不到时改绑默认 n；填了域名并 reload 后测域名，设了密码应显示 401 生效，没 reload 应提示连不上或 200 未生效。
 - ComfyUI 部署套件备份与插件：连续备份 6 次以上 `backups/` 只剩 5 份且权限为 600；用损坏文件恢复应直接报错、容器不动；恢复别处的备份时端口和绑定方式保持本机当前值。菜单 6 → 6 列表带序号，改过文件的插件带 `*`，列完不问重启；6 → 7 按序号卸载并默认不删。
 - ComfyUI 部署套件更新回退：插件本地改了被跟踪文件、上游没改同一文件时，菜单 2 后本地改动应保留；冲突时改用上游版本并提示改动在 `git stash`。在 Dockerfile 里临时加一行必然失败的 RUN 再菜单 2，应提示「退回更新前的版本」，源码和插件 HEAD 回到更新前，旧容器仍在运行。
