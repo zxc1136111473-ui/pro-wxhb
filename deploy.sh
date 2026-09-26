@@ -187,6 +187,10 @@ CONTAINER="infinite-canvas"
 CADDY_CONTAINER="perfume-shop-caddy-1"
 CADDY_GW="172.18.0.1"
 PROBE_TIMEOUT=5      # 共享 Caddy 自检的探测超时（秒），只提示不改动
+LOG_MAX_SIZE="10m"   # 容器日志轮转：单个文件上限 ×
+LOG_MAX_FILE=3       #               文件数（最多 30MB，只作用于本容器，不改 daemon.json）
+# 本地构建模式没有源码时 clone 的仓库：本仓库（fork），带着本仓库的改动；官方镜像里没有这些改动
+CANVAS_GIT="https://github.com/zxc1136111473-ui/pro-wxhb.git"
 # 一条命令重建容器：读状态文件里的 port/mode/mirror/analytics，全量重起。
 run_container() {
   docker_ok || die "Docker 没就绪。先装：$(self_cmd) 里选「装 Docker」，或 apt install docker.io"
@@ -233,7 +237,9 @@ run_container() {
   [ -n "$ga4" ]   && envs+=( -e "ANALYTICS_GA4_ID=$ga4" )
   [ -n "$baidu" ] && envs+=( -e "ANALYTICS_BAIDU_ID=$baidu" )
 
+  # nginx 的访问日志走 stdout：公网站点不轮转会一直涨，同机还有别的项目
   $DOCKER run -d --name "$CONTAINER" --restart unless-stopped \
+    --log-driver json-file --log-opt max-size="$LOG_MAX_SIZE" --log-opt max-file="$LOG_MAX_FILE" \
     -p "$port:3000" ${envs[@]+"${envs[@]}"} "$img" >/dev/null \
     || die "容器起不来。看上面报错（端口被占？用菜单 4 换端口）"
 
@@ -659,7 +665,7 @@ docker_ok && [ "$($DOCKER ps -aq --filter "name=$CONTAINER" 2>/dev/null | wc -l 
 if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
   say "这台机器上${BLD}已经装过${RST}了（容器 $CONTAINER，端口 $(state_read port 3000)）"
   say ""
-  say "  1) ${BLD}全新安装${RST} / 再装一套（换端口换目录）/ 重新部署这一套"
+  say "  1) ${BLD}全新安装${RST} / 重新部署（容器只有一个，换目录会替换现有这套）"
   say "  2) ${BLD}更新到最新版${RST}（本地构建先 git pull 再重建 / 官方镜像重新拉 —— 浏览器里的数据不受影响）"
   say "  3) 体检 + 看访问地址"
   say "  4) 改监听端口"
@@ -740,13 +746,22 @@ else
   ask INSTALL_DIR "装到哪个目录" "$APP_DIR"
 fi
 mkdir -p "$INSTALL_DIR"
+INSTALL_DIR="$(cd "$INSTALL_DIR" && pwd -P)"
+# 容器名只有一个（$CONTAINER）：已经装过又换了目录，等于停掉并替换现有这套，不是「再装一套」
+if [ "$INSTALLED" = "1" ] && [ "$INSTALL_DIR" != "$(cd "$APP_DIR" 2>/dev/null && pwd -P || printf '%s' "$APP_DIR")" ]; then
+  warn "这台机器上已经有一套在跑（${APP_DIR}）。装到 $INSTALL_DIR 会停掉并替换它，原来的端口也会失效"
+  askyn "确定替换？" "n" || { say "取消"; exit 1; }
+fi
 APP_DIR="$INSTALL_DIR"
 state_load
 
 if [ -n "$ZFC_PORT" ]; then PORT="$ZFC_PORT"; else PORT="$(state_read port 3000)"; fi
 ask PORT "服务监听端口" "$PORT"
 port_check "$PORT"
-port_busy "$PORT" && die "端口 $PORT 被别的进程占着（换一个，或先停掉占用的进程）"
+# 自家容器占着同一个端口（重新部署这一套）不算冲突，run_container 会先删旧容器
+if [ "$INSTALLED" = "0" ] || [ "$PORT" != "$(state_read port '')" ]; then
+  port_busy "$PORT" && die "端口 $PORT 被别的进程占着（换一个，或先停掉占用的进程）"
+fi
 
 if [ -n "$ZFC_MODE" ]; then MODE="$ZFC_MODE"; else MODE="$(state_read mode image)"; fi
 say ""
@@ -762,8 +777,8 @@ MODE="$([ "$MODE2" = "2" ] && echo build || echo image)"
 if [ "$MODE" = "build" ]; then
   if [ ! -f "$INSTALL_DIR/Dockerfile" ]; then
     say "当前目录没有源码（没有 Dockerfile）。"
-    if askyn "现在把无限画布源码 clone 到 $INSTALL_DIR（官方仓库，只拉最新版）" "y"; then
-      git clone --depth 1 https://github.com/basketikun/infinite-canvas.git "$INSTALL_DIR/repo" 2>/dev/null \
+    if askyn "现在把源码 clone 到 ${INSTALL_DIR}（本仓库 ${CANVAS_GIT}，只拉最新版）" "y"; then
+      git clone --depth 1 "$CANVAS_GIT" "$INSTALL_DIR/repo" 2>/dev/null \
         || die "clone 源码失败（网络？）。可以手动 clone 后放在 $INSTALL_DIR/repo，再重跑"
       # 把 deploy.sh 也放进去一份，方便以后在 repo 里直接跑
       cp "$0" "$INSTALL_DIR/repo/deploy.sh" 2>/dev/null || true

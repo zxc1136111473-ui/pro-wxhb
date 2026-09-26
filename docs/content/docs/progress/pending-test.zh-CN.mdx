@@ -119,6 +119,7 @@ Canvas Agent 配置权限
 - ComfyUI 部署套件没有终端时：`ssh 主机 'bash deploy.sh --uninstall --purge'`（不带 -t）应打印「确认卸载？… n（没有终端，按默认）」并取消，目录和备份都在；`ssh 主机 'bash deploy.sh'` 应报「没有终端，进不了菜单」；在终端里 `nohup bash deploy.sh --backup &` 应正常跑完并默认包含出图，不应卡在提问上；有风险时 `ssh 主机 'bash deploy.sh --update'` 应取消，加 `-y` 才执行。
 - ComfyUI 部署套件构建期间的任务保护：菜单 2 预览选 y 时没有任务，构建镜像的几分钟里在网页排一个出图任务，删容器前应再提示一次「X 个在跑」并默认不继续；选 n 后旧容器仍在运行，`docker images` 里 comfyui:local 仍是旧镜像，源码和插件退回更新前，`.last-update` 不变。
 - 画布部署脚本（仓库根目录 `deploy.sh`）：共享机上 80/443 被香水商城 Caddy 占着时，菜单 5 应只打印 `域名 { reverse_proxy 172.18.0.1:端口 }` 片段并自检，不执行 apt 安装或 systemctl；装过系统 Caddy 且开机自启时应提示可以 disable。本地构建模式下菜单 2 / `--update` 应先 `git pull` 本仓库并显示「源码：旧 → 新（VERSION …）」，拉下来的改动含 comfyui-deploy/ 时提醒去那边更新；在 Dockerfile 里临时加一行失败的 RUN 再更新，应退回原来的 commit、旧容器照常服务。`r` 应只 `docker restart`，改端口和改统计应显示「用已有镜像」不重新拉取；改端口后已配域名时应提醒改反代端口。官方镜像模式的体检和更新应提示「不含本仓库的改动」。
+- 画布部署脚本后续：本地构建模式装到空目录时应提示 clone 本仓库 `zxc1136111473-ui/pro-wxhb` 并用它构建（推送后才是新代码）；`docker inspect infinite-canvas` 的 LogConfig 应为 json-file、max-size=10m、max-file=3；菜单 1 同目录同端口重新部署不应报端口被占；换一个目录时应提示「会停掉并替换现有这套」并默认不继续，选 n 时容器不动。
 
 ## 图片分辨率尺寸表
 
