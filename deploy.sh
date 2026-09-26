@@ -166,7 +166,10 @@ state_load() { STATE_FILE="$APP_DIR/.install.conf"; }
 state_read() {  # state_read 键 默认
   local k="$1" d="${2:-}"
   [ -f "$STATE_FILE" ] || { printf '%s' "$d"; return; }
-  sed -n "s/^$k=//p" "$STATE_FILE" | tail -1 | sed 's/^"//;s/"$//' || printf '%s' "$d"
+  # 文件在但缺这个键时 sed 也返回 0，不能靠 || 给默认值
+  local v
+  v="$(sed -n "s/^$k=//p" "$STATE_FILE" | tail -1 | sed 's/^"//;s/"$//')"
+  printf '%s' "${v:-$d}"
 }
 state_write() {  # state_write 键 值
   local k="$1" v="$2"
@@ -180,6 +183,10 @@ state_write() {  # state_write 键 值
 
 # ── 容器管理 ───────────────────────────────────────────────────────────────
 CONTAINER="infinite-canvas"
+# 共享机上占着 80/443 的香水商城 Caddy 容器，及它访问宿主机用的网关地址（和 comfyui-deploy 一致）
+CADDY_CONTAINER="perfume-shop-caddy-1"
+CADDY_GW="172.18.0.1"
+PROBE_TIMEOUT=5      # 共享 Caddy 自检的探测超时（秒），只提示不改动
 # 一条命令重建容器：读状态文件里的 port/mode/mirror/analytics，全量重起。
 run_container() {
   docker_ok || die "Docker 没就绪。先装：$(self_cmd) 里选「装 Docker」，或 apt install docker.io"
@@ -191,21 +198,32 @@ run_container() {
   baidu="$(state_read analytics_baidu '')"
 
   # 先备好镜像再删旧容器 —— 构建/拉取失败时旧服务不停
+  # ZFC_NO_PULL=1（改端口 / 改统计 / 重启兜底）：本地已有镜像就直接用，不重新拉取或构建，
+  #   免得 image 模式每次悄悄升级到上游 latest、ghcr.io 拉不动时连改端口都失败
   local img=""
   if [ "$mode" = "build" ]; then
-    # 本地构建：从仓库源码构建（不依赖 ghcr.io）
-    [ -f "$APP_DIR/Dockerfile" ] || die "本地构建需要源码在 $APP_DIR（有 Dockerfile 吗？没有就先 clone 仓库过来）"
-    say "本地构建镜像（用仓库里的 Dockerfile）…"
-    $DOCKER build -t infinite-canvas:local "$APP_DIR" >/dev/null \
-      || die "构建失败。看上面的报错；也可能是网络拉不动 oven/bun 基础镜像"
     img="infinite-canvas:local"
+    if [ "${ZFC_NO_PULL:-0}" = "1" ] && $DOCKER image inspect "$img" >/dev/null 2>&1; then
+      say "用已有镜像 ${img}（不重建）"
+    else
+      # 本地构建：从仓库源码构建（不依赖 ghcr.io）
+      [ -f "$APP_DIR/Dockerfile" ] || die "本地构建需要源码在 ${APP_DIR}（有 Dockerfile 吗？没有就先 clone 仓库过来）"
+      say "本地构建镜像（用仓库里的 Dockerfile）…"
+      # 构建失败时旧容器还没删，服务照旧；ZFC_ON_BUILD_FAIL（更新时）负责把源码退回
+      $DOCKER build -t "$img" "$APP_DIR" \
+        || { [ -z "${ZFC_ON_BUILD_FAIL:-}" ] || "$ZFC_ON_BUILD_FAIL"; die "构建失败。看上面的报错；也可能是网络拉不动 oven/bun 基础镜像"; }
+    fi
   else
     local base="ghcr.io/basketikun/infinite-canvas"
     [ -n "$mirror" ] && base="$mirror"
     img="$base:latest"
-    say "拉取官方镜像 $img …"
-    $DOCKER pull "$img" >/dev/null 2>&1 \
-      || die "拉镜像失败：$img（ghcr.io 在国内经常拉不动，菜单里选 7 换镜像来源，或选 1 时用本地构建模式）"
+    if [ "${ZFC_NO_PULL:-0}" = "1" ] && $DOCKER image inspect "$img" >/dev/null 2>&1; then
+      say "用已有镜像 ${img}（不重新拉取）"
+    else
+      say "拉取官方镜像 $img …"
+      $DOCKER pull "$img" >/dev/null 2>&1 \
+        || die "拉镜像失败：${img}（ghcr.io 在国内经常拉不动，菜单里选 7 换镜像来源，或选 1 时用本地构建模式）"
+    fi
   fi
 
   # 镜像就绪，才停旧容器
@@ -255,7 +273,7 @@ do_analytics() {
   ask_opt BAIDU "百度统计 ID" "$(state_read analytics_baidu '')"
   state_write analytics_ga4 "$GA4"
   state_write analytics_baidu "$BAIDU"
-  run_container
+  ZFC_NO_PULL=1 run_container
   ok "统计设置已生效"
   json_out "analytics" "ga4=$GA4 baidu=$BAIDU"
 }
@@ -282,6 +300,47 @@ do_mirror() {
   json_out "mirror" "mode=$(state_read mode) mirror=$(state_read mirror)"
 }
 
+# ── HTTPS：共享机（80/443 已被别的程序占着）──────────────────────────────────
+# 不装系统 Caddy：apt 装的 caddy 默认开机自启，服务器一重启就和占着 80/443 的程序（香水商城的
+# Caddy 容器）抢端口，挂在那边的站点会全掉线。改为打印站点片段贴到那边，脚本不改别人的 Caddyfile。
+https_shared() {
+  local domain="$1" port="$2" code
+  warn "80/443 已被别的程序占着 —— 不装系统 Caddy（装了会开机自启，重启时和它抢端口）"
+  if [ -z "$($DOCKER ps -q --filter "name=^${CADDY_CONTAINER}\$" 2>/dev/null || true)" ]; then
+    say "  请在占着 80/443 的那个程序里加反代：$domain → 本机 $port 端口"
+    return 0
+  fi
+  say ""
+  say "  在香水商城的 Caddyfile 里追加（纯静态站，不用加密码）："
+  say ""
+  say "    $domain {"
+  say "        reverse_proxy $CADDY_GW:$port"
+  say "    }"
+  say ""
+  say "  然后热加载（注意是容器里的 Caddy）："
+  say "    docker exec $CADDY_CONTAINER caddy reload --config /etc/caddy/Caddyfile"
+  say ""
+  # 只读自检：Caddy 容器能不能经网关访问到画布
+  if $DOCKER exec "$CADDY_CONTAINER" wget -q -O /dev/null -T "$PROBE_TIMEOUT" "http://$CADDY_GW:$port/" >/dev/null 2>&1; then
+    ok "Caddy 容器能访问 $CADDY_GW:$port"
+  else
+    warn "Caddy 容器访问不到 $CADDY_GW:${port}（容器没跑 / 防火墙挡了容器网段 / 容器里没有 wget）"
+  fi
+  if askyn "已经贴好并 reload？现在测一下域名" "n"; then
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time "$PROBE_TIMEOUT" \
+      --resolve "$domain:443:127.0.0.1" "https://$domain/" 2>/dev/null || true)"
+    if [ "$code" = "200" ]; then
+      ok "HTTPS 通了：https://$domain/"; state_write domain "$domain"
+    else
+      warn "域名返回 ${code:-连不上}（没 reload / 站点没生效 / 证书还没签好，稍等再测）"
+    fi
+  fi
+  if systemctl is-enabled --quiet caddy 2>/dev/null; then
+    warn "这台机器还装着系统 Caddy 且开机自启：重启时可能和 $CADDY_CONTAINER 抢 80/443"
+    say "  要停用：sudo systemctl disable --now caddy（会不会影响别的站点，你来确认）"
+  fi
+}
+
 # ── HTTPS（Caddy 反代 + 自动证书）──────────────────────────────────────────
 # 无限画布是纯静态站，套一层 Caddy 反代到本地端口即可自动申请/续期证书。
 # 直连（A 记录指本机）走 HTTP-01；走中转/大陆前置的走 DNS-01（要 CF token）。
@@ -294,6 +353,12 @@ https_wizard() {
   say "  前提：域名已经解析到这台机器（或中转入口）。"
   if [ -n "$ZFC_DOMAIN" ]; then domain="$ZFC_DOMAIN"; else ask domain "域名（比如 canvas.example.com）" ""; fi
   [ -n "$domain" ] || die "没给域名，不配了"
+  # 共享机：80/443 被别的程序占着、系统 Caddy 又没在跑 → 不装系统 Caddy，走共享片段
+  if { port_busy 443 || port_busy 80; } && ! systemctl is-active --quiet caddy 2>/dev/null; then
+    https_shared "$domain" "$port"
+    json_out "https" "domain=$domain shared"
+    return 0
+  fi
   if [ -n "$ZFC_HTTPS_MODE" ]; then mode="$ZFC_HTTPS_MODE"; else
     say ""
     say "  ${BLD}1) 不加中转${RST}：域名 A 记录直接指这台机器，80/443 都通"
@@ -395,6 +460,8 @@ do_check() {
   running="$($DOCKER ps -q --filter "name=$CONTAINER" 2>/dev/null || true)"
   if [ -n "$running" ]; then
     say "  镜像：$($DOCKER inspect "$CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || echo '?')"
+    [ "$(state_read mode image)" = "build" ] \
+      || say "  （官方镜像模式：不含本仓库的改动；要用本仓库的改动，菜单 7 → 3 改成本地构建）"
     say "  版本：$(curl -fsS --max-time 5 "http://127.0.0.1:$port/" 2>/dev/null | grep -oE 'infinite-canvas|无限画布' | head -1 || echo '（页面未含版本标识）')"
   fi
   say ""
@@ -436,8 +503,48 @@ do_data_info() {
   say "  2) 新浏览器里打开同一个地址，【导入】这个文件即可"
   say "  3) 提示词库、API Key 等配置在右上角设置里手动重填"
   say ""
-  say "  如果想让多台电脑共用同一份数据，那需要额外的同步方案"
-  say "  （浏览器本地存储没有多端同步，这是官方设计）。"
+  say "  想让多台电脑共用同一份数据：右上角「配置」→「WebDAV 同步」，填你自己的 WebDAV 服务"
+  say "  （同步画布、我的资产、生成记录和本地媒体，不含 API Key；WebDAV 服务要自备）。"
+}
+
+# ── 更新 ───────────────────────────────────────────────────────────────────
+# 本地构建模式：先 git pull 本仓库（失败就停，不动容器），构建失败把源码退回原来的 commit；
+# 官方镜像模式：拉上游最新镜像（不含本仓库的改动）
+UPD_OLD=""
+update_build_failed() {
+  [ -n "$UPD_OLD" ] || return 0
+  warn "构建失败，把源码退回更新前的版本 …"
+  git -C "$APP_DIR" reset -q --keep "$UPD_OLD" 2>/dev/null \
+    || warn "  退回失败（本地改动冲突？进 $APP_DIR 看 git status）"
+  say "  旧容器没动，服务仍是更新前的版本"
+  return 0
+}
+do_update() {
+  local mode out new
+  mode="$(state_read mode image)"
+  UPD_OLD=""
+  if [ "$mode" = "build" ] && [ -d "$APP_DIR/.git" ]; then
+    UPD_OLD="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
+    say "拉取本仓库源码（git pull）…"
+    if ! out="$(git -C "$APP_DIR" pull --ff-only 2>&1)"; then
+      printf '%s\n' "$out" | sed 's/^/    /'
+      die "源码没更新成功（原因见上），容器没动"
+    fi
+    printf '%s\n' "$out" | tail -2
+  elif [ "$mode" = "build" ]; then
+    warn "$APP_DIR 不是 git 仓库，拉不了新代码：只按现有源码重建"
+  else
+    say "  官方镜像模式：拉的是上游最新镜像，不含本仓库的改动（要用本仓库的改动：菜单 7 → 3 本地构建）"
+  fi
+  say "更新到最新版 —— 拉新镜像 / 重建，重启容器。用户浏览器里的数据不受影响。"
+  ZFC_ON_BUILD_FAIL=update_build_failed run_container
+  new="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
+  if [ -n "$UPD_OLD" ] && [ "$new" != "$UPD_OLD" ]; then
+    say "  源码：${UPD_OLD:0:7} → ${new:0:7}（VERSION $(cat "$APP_DIR/VERSION" 2>/dev/null || echo '?')）"
+    git -C "$APP_DIR" diff --quiet "$UPD_OLD" "$new" -- comfyui-deploy/ \
+      || warn "ComfyUI 部署套件（comfyui-deploy/）也有变化：去那边跑菜单 2 更新，或菜单 1 只重建镜像"
+  fi
+  ok "更新完成"
 }
 
 # ── 卸载 ───────────────────────────────────────────────────────────────────
@@ -541,9 +648,7 @@ if [ "$ZFC_ACTION" = "update" ]; then
   if ! docker_ok || [ "$($DOCKER ps -aq --filter "name=$CONTAINER" 2>/dev/null | wc -l | tr -d ' ')" -lt 1 ]; then
     die "没有找到容器 $CONTAINER —— 先全新安装，而不是更新"
   fi
-  say "更新到最新版 —— 拉新镜像 / 重建，重启容器。用户浏览器里的数据不受影响。"
-  run_container
-  ok "更新完成"
+  do_update
   exit 0
 fi
 
@@ -555,7 +660,7 @@ if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
   say "这台机器上${BLD}已经装过${RST}了（容器 $CONTAINER，端口 $(state_read port 3000)）"
   say ""
   say "  1) ${BLD}全新安装${RST} / 再装一套（换端口换目录）/ 重新部署这一套"
-  say "  2) ${BLD}更新到最新版${RST}（重新拉镜像/重建 —— 浏览器里的数据不受影响）"
+  say "  2) ${BLD}更新到最新版${RST}（本地构建先 git pull 再重建 / 官方镜像重新拉 —— 浏览器里的数据不受影响）"
   say "  3) 体检 + 看访问地址"
   say "  4) 改监听端口"
   say "  5) ${BLD}配 HTTPS${RST}（填域名，自动申请并续期证书）"
@@ -564,7 +669,7 @@ if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
   say "  8) 数据说明（数据都在浏览器，怎么备份迁移）"
   say "  9) ${RED}卸载${RST}"
   say "  l) 看容器日志"
-  say "  r) 重启容器"
+  say "  r) 重启容器（docker restart，不重新拉镜像）"
   say "  0) 退出"
   ask WHAT "选一个" "1"
   case "$WHAT" in
@@ -575,8 +680,10 @@ if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
        port_check "$NP"
        port_busy "$NP" && die "端口 $NP 被别的进程占着"
        state_write port "$NP"
-       run_container
+       ZFC_NO_PULL=1 run_container
        ok "端口已改为 $NP"
+       [ -z "$(state_read domain '')" ] \
+         || warn "域名的反代还指着旧端口：菜单 5 重新配一次（共享 Caddy 要手动把 Caddyfile 里的端口改成 $NP 并 reload）"
        exit 0 ;;
     5) https_wizard; exit 0 ;;
     6) do_analytics; exit 0 ;;
@@ -588,7 +695,8 @@ if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
        ask UW "选一个" "a"
        do_uninstall "$([ "$UW" = "b" ] && echo 1 || echo 0)"; exit 0 ;;
     l|L) $DOCKER logs --tail 50 "$CONTAINER" 2>&1 || true; exit 0 ;;
-    r|R) run_container; exit 0 ;;
+    r|R) if $DOCKER restart "$CONTAINER" >/dev/null 2>&1; then ok "已重启"; else ZFC_NO_PULL=1 run_container; fi
+         exit 0 ;;
     0) exit 0 ;;
     *) hr ;;   # 随手回车 → 往下走部署流程
   esac
@@ -600,9 +708,7 @@ if [ "$ZFC_ACTION" = "update" ]; then
 fi
 
 if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" = "update" ]; then
-  say "更新到最新版 —— 拉新镜像 / 重建，重启容器。用户浏览器里的数据不受影响。"
-  run_container
-  ok "更新完成"
+  do_update
   exit 0
 fi
 
