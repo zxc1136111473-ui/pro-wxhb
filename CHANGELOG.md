@@ -2,10 +2,12 @@
 
 ## Unreleased
 
-+ [新增] ComfyUI 部署套件内置 6 个 API 工作流（文生图 / 商品图换背景改图 / 封面横图 16:9 / 文生视频 / 音乐 Suno / 图片放大 2 倍），放在 `comfyui-deploy/workflows/`，起容器时自动铺进 ComfyUI 工作流目录（已存在同名不覆盖）；工作流本身不含密钥：图片三个首次在 Relay API Settings 的 apikey 填一次网关 Key，文生视频（Veo，经 geminiweb 的 `/v1/videos` 异步出片）填 geminiweb 的 API Key；音乐（Suno，经网关的 Suno 渠道或任意 Suno 中转站）填对应的 Key；图片放大不需要 Key（ComfyUI 自带 Lanczos 2 倍加轻度锐化，1~2 秒）。上游 gemini-image 实际只出约 1K，选 2K/4K 无效，要大图用它放大。
++ [新增] ComfyUI 部署套件内置 9 个 API 工作流（文生图 / 商品图换背景改图 / 封面横图 16:9 / 文生视频 / 音乐 Suno / 图片放大 2 倍 / 音乐 Gemini / 文案生成 / 看图写文案），放在 `comfyui-deploy/workflows/`，起容器时自动铺进 ComfyUI 工作流目录（已存在同名不覆盖）；工作流本身不含密钥：图片三个首次在 Relay API Settings 的 apikey 填一次网关 Key，文生视频（Veo，经 geminiweb 的 `/v1/videos` 异步出片）填 geminiweb 的 API Key；音乐（Suno，经网关的 Suno 渠道或任意 Suno 中转站）填对应的 Key；图片放大不需要 Key（ComfyUI 自带 Lanczos 2 倍加轻度锐化，1~2 秒）。上游 gemini-image 实际只出约 1K，选 2K/4K 无效，要大图用它放大。
 + [优化] 文生视频改进：geminiweb fork 识别 Google「视频额度用尽」并约 30 秒内报清楚原因（不再干等 3~10 分钟），视频请求只发 1 次，首轮没触发视频工具时立即重来；新增只读的账号用量查询。Pro 账号视频每个太平洋日约 3 个，需留意额度。
 + [修复] 工作流 02（商品图换背景）默认 prompt 改为明确写法：原来的简短说法会让模型几乎原样返回原图，实测用真实钻戒商品照验证，新写法两次都换成纯白背景且商品不变。
 + [修复] 内置的 5 个 relayapi 工作流新增「结果 / 错误信息」预览节点：relayapi 节点出错时不抛异常（作者为批量流程这样设计），原来 ComfyUI 会显示「成功」却没有结果；现在出错原因（如网关 503 过载、模型名不存在）直接显示在画布上。
++ [新增] ComfyUI 部署套件自带「Gemini 音乐」节点（`custom-nodes/pro-gemini-music`，安装时铺入）和 `07-音乐-Gemini` 工作流：经 geminiweb 的 gemini-music（Google Lyria）出约 1 分钟的立体声 MP3，不需要 Suno 的 key，Key 与 04 文生视频共用；出错时节点直接报红并显示原因。实测偶发失败（Google 侧没出音频），重新运行即可。
++ [新增] 内置 `08-文案生成` 和 `09-看图写文案` 工作流（Relay Text Generator 经网关的 gemini 文字模型，与图片共用网关 Key），默认模型 gemini-3.5-flash-lite（实测比 3.6-flash 稳）；文案里偶带 `[cite: 1]` 引用标记，AI 编的参数需人工核对。配音（TTS）暂无免 Key 方案：geminiweb 和网关都没有语音模型。
 + [新增] ComfyUI 部署套件支持在 `.install.conf` 配 `extra_network`，起容器后自动接入该 docker 网络（如网关所在的 `airelay`），重建容器也不丢；API 出图节点可用 `http://<网关容器>:<端口>` 直连网关走 chat 端点出图。
 + [调整] 画布部署脚本本地构建模式没有源码时改为克隆本仓库，容器日志按 10MB×3 轮转；菜单 1 不再称可以「再装一套」，换目录重装前先确认，同端口重新部署不再误报端口被占。
 + [修复] 画布部署脚本在 80/443 已被占用的共享服务器上不再安装系统 Caddy，改为打印反代片段并自检；本地构建模式的更新会先拉取本仓库代码，构建失败自动退回；重启、改端口和改统计复用已有镜像，不再重新拉取。
