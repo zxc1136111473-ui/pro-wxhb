@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-+ [新增] ComfyUI 部署套件内置 5 个 relayapi API 工作流（文生图 / 商品图换背景改图 / 封面横图 16:9 / 文生视频 / 音乐 Suno），放在 `comfyui-deploy/workflows/`，起容器时自动铺进 ComfyUI 工作流目录（已存在同名不覆盖）；工作流本身不含密钥：图片三个首次在 Relay API Settings 的 apikey 填一次网关 Key，文生视频（Veo，经 geminiweb 的 `/v1/videos` 异步出片）填 geminiweb 的 API Key；音乐（Suno，经网关的 Suno 渠道或任意 Suno 中转站）填对应的 Key。
++ [新增] ComfyUI 部署套件内置 6 个 API 工作流（文生图 / 商品图换背景改图 / 封面横图 16:9 / 文生视频 / 音乐 Suno / 图片放大 2 倍），放在 `comfyui-deploy/workflows/`，起容器时自动铺进 ComfyUI 工作流目录（已存在同名不覆盖）；工作流本身不含密钥：图片三个首次在 Relay API Settings 的 apikey 填一次网关 Key，文生视频（Veo，经 geminiweb 的 `/v1/videos` 异步出片）填 geminiweb 的 API Key；音乐（Suno，经网关的 Suno 渠道或任意 Suno 中转站）填对应的 Key；图片放大不需要 Key（ComfyUI 自带 Lanczos 2 倍加轻度锐化，1~2 秒）。上游 gemini-image 实际只出约 1K，选 2K/4K 无效，要大图用它放大。
 + [优化] 文生视频改进：geminiweb fork 识别 Google「视频额度用尽」并约 30 秒内报清楚原因（不再干等 3~10 分钟），视频请求只发 1 次，首轮没触发视频工具时立即重来；新增只读的账号用量查询。Pro 账号视频每个太平洋日约 3 个，需留意额度。
 + [修复] 工作流 02（商品图换背景）默认 prompt 改为明确写法：原来的简短说法会让模型几乎原样返回原图，实测用真实钻戒商品照验证，新写法两次都换成纯白背景且商品不变。
 + [修复] 内置的 5 个 relayapi 工作流新增「结果 / 错误信息」预览节点：relayapi 节点出错时不抛异常（作者为批量流程这样设计），原来 ComfyUI 会显示「成功」却没有结果；现在出错原因（如网关 503 过载、模型名不存在）直接显示在画布上。
