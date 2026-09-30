@@ -183,7 +183,7 @@ state_write() {  # state_write 键 值
 
 # ── 容器管理 ───────────────────────────────────────────────────────────────
 CONTAINER="infinite-canvas"
-# 共享机上占着 80/443 的香水商城 Caddy 容器，及它访问宿主机用的网关地址（和 comfyui-deploy 一致）
+# 共享机上占着 80/443 的香水商城 Caddy 容器，及它访问宿主机用的网关地址（和 ComfyUI 部署套件 pro-cui 一致）
 CADDY_CONTAINER="perfume-shop-caddy-1"
 CADDY_GW="172.18.0.1"
 PROBE_TIMEOUT=5      # 共享 Caddy 自检的探测超时（秒），只提示不改动
@@ -547,8 +547,6 @@ do_update() {
   new="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
   if [ -n "$UPD_OLD" ] && [ "$new" != "$UPD_OLD" ]; then
     say "  源码：${UPD_OLD:0:7} → ${new:0:7}（VERSION $(cat "$APP_DIR/VERSION" 2>/dev/null || echo '?')）"
-    git -C "$APP_DIR" diff --quiet "$UPD_OLD" "$new" -- comfyui-deploy/ \
-      || warn "ComfyUI 部署套件（comfyui-deploy/）也有变化：去那边跑菜单 2 更新，或菜单 1 只重建镜像"
   fi
   ok "更新完成"
 }
