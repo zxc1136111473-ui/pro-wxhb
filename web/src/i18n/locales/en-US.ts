@@ -379,6 +379,8 @@ export default {
         run: "Start",
         stop: "Stop",
         downloadAll: "Download zip",
+        addAllToAssets: "Add all to My Assets",
+        addedToAssets: "Added {{count}} to My Assets",
         nothingDone: "Nothing finished yet",
         source: "Source",
         prompt: "Prompt",

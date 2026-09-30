@@ -1,4 +1,4 @@
-import { Download, ImagePlus, Play, Plus, Square, Trash2 } from "lucide-react";
+import { Download, FolderPlus, ImagePlus, Play, Plus, Square, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Empty, Image, Input, Select, Table, Tag } from "antd";
 import { saveAs } from "file-saver";
@@ -7,9 +7,11 @@ import { useTranslation } from "react-i18next";
 
 import { createZip } from "@/lib/zip";
 import { hasComfyChannel, runImageTemplate, type ImageTemplate } from "@/services/api/comfyui";
+import { uploadImage } from "@/services/image-storage";
+import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore } from "@/stores/use-config-store";
 
-type Row = { id: string; prompt: string; image?: File; src?: string; status: "idle" | "running" | "done" | "error"; url?: string; blob?: Blob; error?: string };
+type Row = { id: string; prompt: string; image?: File; src?: string; status: "idle" | "running" | "done" | "error"; saved?: boolean; url?: string; blob?: Blob; error?: string };
 
 const templates: ImageTemplate[] = ["hd", "edit", "label"];
 const ratios = ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2"];
@@ -18,6 +20,7 @@ const newRow = (patch: Partial<Row> = {}): Row => ({ id: nanoid(), prompt: "", s
 export default function BatchPage() {
     const { message } = App.useApp();
     const { t } = useTranslation();
+    const addAsset = useAssetStore((state) => state.addAsset);
     const ready = useConfigStore((state) => hasComfyChannel(state.config.channels));
     const [template, setTemplate] = useState<ImageTemplate>("label");
     const [ratio, setRatio] = useState("1:1");
@@ -60,6 +63,21 @@ export default function BatchPage() {
             }
         }
         setRunning(false);
+    };
+
+    const addToAssets = async (targets: Row[]) => {
+        const done = targets.filter((row) => row.blob && !row.saved);
+        if (!done.length) return message.info(t("batch.nothingDone"));
+        try {
+            for (const row of done) {
+                const image = await uploadImage(row.blob!);
+                addAsset({ kind: "image", title: row.prompt.trim().slice(0, 30) || t(`batch.templates.${template}`), coverUrl: image.url, tags: [], source: t("batch.title"), data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType } });
+                patch(row.id, { saved: true });
+            }
+            message.success(t("batch.addedToAssets", { count: done.length }));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : String(error));
+        }
     };
 
     const downloadAll = async () => {
@@ -111,6 +129,9 @@ export default function BatchPage() {
                                 <Button icon={<Download className="size-4" />} onClick={() => void downloadAll()}>
                                     {t("batch.downloadAll")}
                                 </Button>
+                                <Button icon={<FolderPlus className="size-4" />} onClick={() => void addToAssets(rows)}>
+                                    {t("batch.addAllToAssets")}
+                                </Button>
                             </div>
                             <Table<Row>
                                 className="mt-4"
@@ -122,7 +143,7 @@ export default function BatchPage() {
                                     { title: t(template === "label" ? "batch.labels" : "batch.prompt"), render: (_: unknown, row: Row) => <Input.TextArea autoSize={{ minRows: 1, maxRows: 4 }} disabled={running} value={row.prompt} placeholder={t(`batch.placeholders.${template}`)} onChange={(event) => patch(row.id, { prompt: event.target.value })} /> },
                                     { title: t("batch.status"), width: 200, render: (_: unknown, row: Row) => (row.status === "error" ? <span className="text-xs text-red-500">{row.error}</span> : <Tag color={{ idle: "default", running: "processing", done: "success" }[row.status]}>{t(`batch.statuses.${row.status}`)}</Tag>) },
                                     { title: t("batch.result"), width: 96, render: (_: unknown, row: Row) => (row.url ? <Image width={64} height={64} className="object-cover" src={row.url} /> : null) },
-                                    { title: "", width: 48, render: (_: unknown, row: Row) => <Button type="text" size="small" danger disabled={running} icon={<Trash2 className="size-4" />} onClick={() => setRows((items) => items.filter((item) => item.id !== row.id))} /> },
+                                    { title: "", width: 88, render: (_: unknown, row: Row) => <><Button type="text" size="small" title={t("common.addToAssets")} disabled={!row.blob || row.saved} icon={<FolderPlus className="size-4" />} onClick={() => void addToAssets([row])} /><Button type="text" size="small" danger disabled={running} icon={<Trash2 className="size-4" />} onClick={() => setRows((items) => items.filter((item) => item.id !== row.id))} /></> },
                                 ]}
                             />
                         </>

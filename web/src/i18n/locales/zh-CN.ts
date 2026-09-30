@@ -379,6 +379,8 @@ export default {
         run: "开始",
         stop: "停止",
         downloadAll: "打包下载",
+        addAllToAssets: "全部加入我的资产",
+        addedToAssets: "已加入 {{count}} 张到我的资产",
         nothingDone: "还没有已完成的结果",
         source: "原图",
         prompt: "提示词",
