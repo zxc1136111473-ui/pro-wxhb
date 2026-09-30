@@ -1,4 +1,4 @@
-import { FileText, ImagePlus, Images, Maximize2, Settings2, Video } from "lucide-react";
+import { FileText, ImagePlus, Images, Layers, Maximize2, Mic, Settings2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -20,6 +20,14 @@ export const navigationTools = [
     {
         slug: "assets",
         icon: Images,
+    },
+    {
+        slug: "batch",
+        icon: Layers,
+    },
+    {
+        slug: "voices",
+        icon: Mic,
     },
     {
         slug: "config",
