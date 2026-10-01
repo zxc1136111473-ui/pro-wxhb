@@ -79,17 +79,30 @@ export async function deleteVoice(voice: string, signal?: AbortSignal) {
     await runComfyGraph(aliGraph({ "2": { class_type: "ProAliVoiceAdmin", inputs: { action: "删除", voice, info: ["31", 0] } } }), { signal });
 }
 
-/** 用某个自定义音色合成一句话，返回 mp3；ProAliTTS 会按音色 id 前缀自动选 vd / vc 模型。 */
-export async function previewVoice(voice: string, sample: string, signal?: AbortSignal) {
+export type TtsOptions = { voice: string; model: string; language: string; instructions: string; speed: number; volumeDb: number; customVoice: string };
+export type TtsChoices = { voices: string[]; models: string[]; languages: string[] };
+export const defaultTtsOptions: TtsOptions = { voice: "Cherry", model: "qwen3-tts-flash", language: "Chinese", instructions: "", speed: 1, volumeDb: 0, customVoice: "" };
+
+/** 配音节点的可选音色 / 模型 / 语言直接问 ComfyUI，不在前端再抄一份。 */
+export async function getTtsChoices(signal?: AbortSignal): Promise<TtsChoices> {
+    const input = (await client()({ url: "/object_info/ProAliTTS", signal })).ProAliTTS.input.required;
+    return { voices: input.voice[0], models: input.model[0], languages: input.language[0] };
+}
+
+/** 配音，返回 mp3；填了 customVoice 就按音色 id 前缀自动选 vd / vc 模型，忽略 voice 和 model。 */
+export async function runTts(job: TtsOptions & { text: string }, signal?: AbortSignal) {
     const out = await runComfyGraph(
         aliGraph({
-            "2": { class_type: "ProAliTTS", inputs: { text: sample, voice: "Cherry", model: "qwen3-tts-flash", language: "Chinese", instructions: "", speed: 1, volume_db: 0, custom_voice: voice, info: ["31", 0] } },
-            "3": saveAudio("2", "voices/preview"),
+            "2": { class_type: "ProAliTTS", inputs: { text: job.text, voice: job.voice, model: job.model, language: job.language, instructions: job.instructions, speed: job.speed, volume_db: job.volumeDb, custom_voice: job.customVoice.trim(), info: ["31", 0] } },
+            "3": saveAudio("2", "batch/tts"),
         }),
         { signal },
     );
     return fetchComfyFile(out["3"].audio![0], signal);
 }
+
+/** 用某个自定义音色合成一句话试听。 */
+export const previewVoice = (voice: string, sample: string, signal?: AbortSignal) => runTts({ ...defaultTtsOptions, text: sample, customVoice: voice }, signal);
 
 export async function designVoice(input: { prompt: string; previewText: string; name: string; language: string }, signal?: AbortSignal) {
     const out = await runComfyGraph(
