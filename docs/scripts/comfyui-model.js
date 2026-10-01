@@ -22,6 +22,7 @@ async function upload(dataUrl, i) {
     return (await request({ method: "post", url: `${base}/upload/image`, data: form, headers })).name;
 }
 
+// 与 web/src/services/api/comfyui.ts 的 imageGraph 是同一份工作流定义：改这里要同步改页面（反之亦然）。
 function buildGraph(prompt, files) {
     const seed = Math.floor(Math.random() * 2 ** 31);
     if (mode === "hd") {
