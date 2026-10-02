@@ -1,6 +1,7 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
+import { diffMatte } from "@/lib/canvas/layer-matting";
 import { useConfigStore, withLocalProxy } from "@/stores/use-config-store";
 
 type Graph = Record<string, { class_type: string; inputs: Record<string, unknown> }>;
@@ -162,4 +163,28 @@ export async function runImageTemplate(template: ImageTemplate, job: ImageJob, s
     const image = out["90"]?.images?.[0];
     if (!image) throw new Error(out["91"]?.text?.join("\n") || text("runFailed"));
     return fetchComfyFile(image, signal);
+}
+
+const matteBackground = (color: string) => `请只改背景：把原来的背景完全去掉，换成${color}的无缝背景，不要任何阴影、倒影、渐变和反光；商品本身的形状、位置、大小、角度、颜色和细节一律保持原样，不要移动也不要缩放。`;
+
+/** 抠出主体：让阿里改图模型在纯黑 / 纯白背景上各重绘一张（同一个种子），再在浏览器里用差值算出透明度。约 1~2 分钟，调两次改图。 */
+export async function cutoutSubject(image: Blob, signal?: AbortSignal) {
+    const file = await uploadToComfy(image, `cutout_${Date.now()}.png`, signal);
+    const edit = (color: string) => ({ class_type: "ProAliImageEdit", inputs: { prompt: matteBackground(color), model: "qwen-image-edit-max", seed: 7, image1: ["10", 0], info: ["31", 0] } });
+    const out = await runComfyGraph(
+        aliGraph({
+            "10": { class_type: "LoadImage", inputs: { image: file } },
+            "2": edit("纯黑色（#000000）"),
+            "3": edit("纯白色（#FFFFFF）"),
+            "92": { class_type: "SaveImage", inputs: { filename_prefix: "canvas/cutout_black", images: ["2", 0] } },
+            "93": { class_type: "SaveImage", inputs: { filename_prefix: "canvas/cutout_white", images: ["3", 0] } },
+            "94": { class_type: "PreviewAny", inputs: { source: ["2", 1] } },
+            "95": { class_type: "PreviewAny", inputs: { source: ["3", 1] } },
+        }),
+        { signal },
+    );
+    const black = out["92"]?.images?.[0];
+    const white = out["93"]?.images?.[0];
+    if (!black || !white) throw new Error([out["94"], out["95"]].flatMap((item) => item?.text || []).join("\n") || text("runFailed"));
+    return diffMatte(await fetchComfyFile(black, signal), await fetchComfyFile(white, signal));
 }
