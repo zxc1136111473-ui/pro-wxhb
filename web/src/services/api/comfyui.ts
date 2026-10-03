@@ -157,8 +157,8 @@ const LABEL_LAYOUT = [
     { position: "左下", style: "黑底金字", size: 4.5 },
 ];
 
-// 与 docs/scripts/comfyui-model.js 里的 buildGraph 是同一份工作流定义：改这里要同步改脚本（反之亦然）。
-function imageGraph(template: ImageTemplate, job: ImageJob, file?: string): Graph {
+// 与 docs/scripts/comfyui-model.js 里的 buildGraph 是同一份工作流定义：改这里要同步改脚本（反之亦然），tests/comfyui-graph-sync.test.ts 会比对两边。
+export function imageGraph(template: ImageTemplate, job: ImageJob, file?: string): Graph {
     const seed = Math.floor(Math.random() * 2 ** 31);
     const save = (source: string, prefix: string) => ({ "90": { class_type: "SaveImage", inputs: { filename_prefix: prefix, images: [source, 0] } }, "91": { class_type: "PreviewAny", inputs: { source: [source, 1] } } });
     if (template === "hd") {
