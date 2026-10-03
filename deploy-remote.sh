@@ -26,8 +26,9 @@ RUN_ARGS="${DEPLOY_RUN_ARGS:-}"
 
 remote() { "${SSH[@]}" "$HOST" "$@"; }
 
+# nginx 的访问日志写在容器标准输出里，不限制会一直涨；和 deploy.sh、服务器上其它容器一致：单个文件 10MB，最多 3 个。
 run_container() { # $1 = 镜像 tag
-    remote "docker rm -f $CONTAINER >/dev/null 2>&1 || true; docker run -d --name $CONTAINER --restart unless-stopped -p $BIND:$PORT:3000 $RUN_ARGS $IMAGE:$1 >/dev/null"
+    remote "docker rm -f $CONTAINER >/dev/null 2>&1 || true; docker run -d --name $CONTAINER --restart unless-stopped --log-opt max-size=10m --log-opt max-file=3 -p $BIND:$PORT:3000 $RUN_ARGS $IMAGE:$1 >/dev/null"
 }
 
 wait_ok() { # 15 秒内应答 200
