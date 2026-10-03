@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 画布容器的 nginx 不再暴露版本号（`server_tokens off`），所有响应带 `X-Content-Type-Options: nosniff`、`X-Frame-Options: SAMEORIGIN`、`Referrer-Policy: strict-origin-when-cross-origin`；缓存头改成 `map` 按路径统一算，避免带自己 `add_header` 的 location 丢掉 server 级的安全头。没有加 CSP（「调用脚本」要用 `new Function`，严格的 CSP 需要 `unsafe-eval`，起不到防护作用）；HSTS 要在前面的反代上配。画布被别的网站用 iframe 嵌入会被 `X-Frame-Options` 挡住。
++ [修复] `deploy-remote.sh` 末尾的验证原来取文件名排第一的 `index-*.js`，拆包后可能是几百字节的小块（不到 gzip 下限，不压缩），验证结果有误导；改为取最大的文件（主包）。CI 固定到 `ubuntu-24.04`，`checkout` 升到 v5（消掉 Node 20 弃用和 `ubuntu-latest` 迁移的警告）。
 + [优化] 首屏 JS 变小：主包 3.8MB → 2.5MB（gzip 后约 1.2MB → 0.8MB）。「调用脚本」编辑器（带 CodeMirror，约 500KB）改为第一次点开才下载；Agent 面板拆成独立块，不再占首屏（它常驻连接本地 Agent，所以仍会随页面在后台加载）；生图、视频、提示词库、资产、配置、批量出图、音色管理页面改为第一次访问才下载，画布和首页仍在主包里。
 + [优化] 画布前端开启 gzip（含前面有 Caddy 等反代的情况：反代转发的请求带 `Via` 头，nginx 默认不压缩，已设 `gzip_proxied any`），线上主包实际下载 791KB（原来 3.8MB 未压缩）；带 hash 的 `/assets/` 长期缓存（`immutable`），入口页 `no-cache`，部署新版本后用户能立刻拿到新包、回访不再重复下载。
 + [修复] 直接访问或刷新「我的资产」（`/assets`）会 301 到容器内的 `:3000` 端口、带斜杠则 403：前端路由和构建产物目录同名，nginx 现在直接返回入口页；目录补斜杠的跳转改为相对地址。

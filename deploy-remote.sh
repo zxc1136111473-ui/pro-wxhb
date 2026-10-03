@@ -66,6 +66,6 @@ if [ -n "$old_prev" ] && [ "$old_prev" != "$new_prev" ]; then
 fi
 
 echo "==> 验证"
-js="$(basename "$(ls web/dist/assets/index-*.js | head -1)")"
+js="$(basename "$(ls -S web/dist/assets/*.js | head -1)")" # 最大的文件才是主包；拆包后有几百字节的小块，不到 gzip 的下限，不会压缩
 remote "curl -s -D - -o /dev/null -H 'Accept-Encoding: gzip' http://127.0.0.1:$PORT/assets/$js | grep -iE '^(HTTP|content-encoding|cache-control)'"
 echo "完成。要回退：在服务器上 docker rm -f ${CONTAINER}，再用 ${IMAGE}:prev 按同样参数 docker run。"
