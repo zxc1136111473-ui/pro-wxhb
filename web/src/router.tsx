@@ -1,18 +1,15 @@
+import type { ComponentType } from "react";
 import { createBrowserRouter, Outlet } from "react-router-dom";
 
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import UserLayout from "@/layouts/user-layout";
-import AssetsPage from "@/pages/assets";
-import BatchPage from "@/pages/batch";
 import CanvasPage from "@/pages/canvas";
 import CanvasProjectPage from "@/pages/canvas/project";
-import ConfigPage from "@/pages/config";
 import HomePage from "@/pages/home";
-import ImagePage from "@/pages/image";
 import NotFound from "@/pages/not-found";
-import PromptsPage from "@/pages/prompts";
-import VideoPage from "@/pages/video";
-import VoicesPage from "@/pages/voices";
+
+// 画布和首页是主入口，打在主包里；其余页面第一次访问时才下载。
+const lazyPage = (load: () => Promise<{ default: ComponentType }>) => async () => ({ Component: (await load()).default });
 
 export const router = createBrowserRouter([
     {
@@ -22,17 +19,19 @@ export const router = createBrowserRouter([
                 <Outlet />
             </UserLayout>
         ),
+        // 直接打开按需加载的页面时，下载完成前先显示空白底，不让路由在控制台报没有 HydrateFallback
+        HydrateFallback: () => <div className="h-dvh bg-background" />,
         children: [
             { path: "/", element: <HomePage /> },
-            { path: "/image", element: <ImagePage /> },
-            { path: "/video", element: <VideoPage /> },
-            { path: "/assets", element: <AssetsPage /> },
-            { path: "/prompts", element: <PromptsPage /> },
+            { path: "/image", lazy: lazyPage(() => import("@/pages/image")) },
+            { path: "/video", lazy: lazyPage(() => import("@/pages/video")) },
+            { path: "/assets", lazy: lazyPage(() => import("@/pages/assets")) },
+            { path: "/prompts", lazy: lazyPage(() => import("@/pages/prompts")) },
             { path: "/canvas", element: <CanvasPage /> },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
-            { path: "/batch", element: <BatchPage /> },
-            { path: "/voices", element: <VoicesPage /> },
-            { path: "/config", element: <ConfigPage /> },
+            { path: "/batch", lazy: lazyPage(() => import("@/pages/batch")) },
+            { path: "/voices", lazy: lazyPage(() => import("@/pages/voices")) },
+            { path: "/config", lazy: lazyPage(() => import("@/pages/config")) },
         ],
     },
     { path: "*", element: <NotFound /> },

@@ -96,7 +96,10 @@ export default function BatchPage() {
     }, [loaded, kind, options, tables]);
 
     useEffect(() => {
-        if (isTts && ready && !choices) getTtsChoices().then(setChoices).catch((error) => message.error(error instanceof Error ? error.message : String(error)));
+        if (isTts && ready && !choices)
+            getTtsChoices()
+                .then(setChoices)
+                .catch((error) => message.error(error instanceof Error ? error.message : String(error)));
     }, [isTts, ready, choices, message]);
 
     const addImages = (files: FileList | null) => {
@@ -105,7 +108,10 @@ export default function BatchPage() {
     };
 
     const addLines = () => {
-        const lines = (pasteText || "").split("\n").map((line) => line.trim()).filter(Boolean);
+        const lines = (pasteText || "")
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
         if (lines.length) setRows((items) => [...items.filter((item) => item.prompt || item.image), ...lines.map((prompt) => newRow({ prompt }))]);
         setPasteText(null);
     };
@@ -145,7 +151,14 @@ export default function BatchPage() {
         try {
             for (const row of done) {
                 const image = await uploadImage(row.blob!);
-                addAsset({ kind: "image", title: row.prompt.trim().slice(0, 30) || t(`batch.templates.${kind}`), coverUrl: image.url, tags: [], source: t("batch.title"), data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType } });
+                addAsset({
+                    kind: "image",
+                    title: row.prompt.trim().slice(0, 30) || t(`batch.templates.${kind}`),
+                    coverUrl: image.url,
+                    tags: [],
+                    source: t("batch.title"),
+                    data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType },
+                });
                 patch(row.id, { saved: true });
             }
             message.success(t("batch.addedToAssets", { count: done.length }));
@@ -182,17 +195,50 @@ export default function BatchPage() {
                             </div>
                             {isTts ? (
                                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                                    <Select className="w-40" showSearch placeholder={t("batch.voice")} value={options.voice} disabled={running || !!options.customVoice.trim()} loading={!choices} onChange={(voice) => setOption({ voice })} options={(choices?.voices || [options.voice]).map((value) => ({ value, label: value }))} />
-                                    <Select className="w-56" value={options.model} disabled={running || !!options.customVoice.trim()} onChange={(model) => setOption({ model })} options={(choices?.models || [options.model]).map((value) => ({ value, label: value }))} />
+                                    <Select
+                                        className="w-40"
+                                        showSearch
+                                        placeholder={t("batch.voice")}
+                                        value={options.voice}
+                                        disabled={running || !!options.customVoice.trim()}
+                                        loading={!choices}
+                                        onChange={(voice) => setOption({ voice })}
+                                        options={(choices?.voices || [options.voice]).map((value) => ({ value, label: value }))}
+                                    />
+                                    <Select
+                                        className="w-56"
+                                        value={options.model}
+                                        disabled={running || !!options.customVoice.trim()}
+                                        onChange={(model) => setOption({ model })}
+                                        options={(choices?.models || [options.model]).map((value) => ({ value, label: value }))}
+                                    />
                                     <Select className="w-32" value={options.language} disabled={running} onChange={(language) => setOption({ language })} options={(choices?.languages || [options.language]).map((value) => ({ value, label: value }))} />
-                                    <label className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">{t("batch.speed")}<InputNumber className="w-24" min={0.5} max={2} step={0.05} value={options.speed} disabled={running} onChange={(speed) => setOption({ speed: speed ?? 1 })} /></label>
-                                    <label className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">{t("batch.volume")}<InputNumber className="w-24" min={-20} max={12} step={0.5} value={options.volumeDb} disabled={running} onChange={(volumeDb) => setOption({ volumeDb: volumeDb ?? 0 })} /></label>
+                                    <label className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
+                                        {t("batch.speed")}
+                                        <InputNumber className="w-24" min={0.5} max={2} step={0.05} value={options.speed} disabled={running} onChange={(speed) => setOption({ speed: speed ?? 1 })} />
+                                    </label>
+                                    <label className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
+                                        {t("batch.volume")}
+                                        <InputNumber className="w-24" min={-20} max={12} step={0.5} value={options.volumeDb} disabled={running} onChange={(volumeDb) => setOption({ volumeDb: volumeDb ?? 0 })} />
+                                    </label>
                                     <Input className="w-72" allowClear placeholder={t("batch.customVoice")} value={options.customVoice} disabled={running} onChange={(event) => setOption({ customVoice: event.target.value })} />
-                                    {instruct && !options.customVoice.trim() ? <Input className="w-96" allowClear placeholder={t("batch.instructions")} value={options.instructions} disabled={running} onChange={(event) => setOption({ instructions: event.target.value })} /> : null}
+                                    {instruct && !options.customVoice.trim() ? (
+                                        <Input className="w-96" allowClear placeholder={t("batch.instructions")} value={options.instructions} disabled={running} onChange={(event) => setOption({ instructions: event.target.value })} />
+                                    ) : null}
                                 </div>
                             ) : null}
                             <div className="mt-4 flex flex-wrap gap-3">
-                                <input ref={filesRef} type="file" accept="image/*" multiple hidden onChange={(event) => { addImages(event.target.files); event.target.value = ""; }} />
+                                <input
+                                    ref={filesRef}
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    hidden
+                                    onChange={(event) => {
+                                        addImages(event.target.files);
+                                        event.target.value = "";
+                                    }}
+                                />
                                 {needImage ? (
                                     <Button icon={<ImagePlus className="size-4" />} disabled={running} onClick={() => filesRef.current?.click()}>
                                         {t("batch.addImages")}
@@ -237,16 +283,50 @@ export default function BatchPage() {
                                 pagination={false}
                                 columns={[
                                     ...(needImage ? [{ title: t("batch.source"), width: 96, render: (_: unknown, row: Row) => (row.image ? <Image width={64} height={64} className="object-cover" src={row.src} /> : null) }] : []),
-                                    { title: t(kind === "label" ? "batch.labels" : isTts ? "batch.text" : "batch.prompt"), render: (_: unknown, row: Row) => <Input.TextArea autoSize={{ minRows: 1, maxRows: 4 }} disabled={running} value={row.prompt} placeholder={t(`batch.placeholders.${kind}`)} onChange={(event) => patch(row.id, { prompt: event.target.value, ...(row.status === "done" ? { status: "idle" as const } : {}) })} /> },
-                                    { title: t("batch.status"), width: 200, render: (_: unknown, row: Row) => (row.status === "error" ? <span className="text-xs text-red-500">{row.error}</span> : <Tag color={{ idle: "default", running: "processing", done: "success" }[row.status]}>{t(`batch.statuses.${row.status}`)}</Tag>) },
-                                    { title: t("batch.result"), width: isTts ? 280 : 96, render: (_: unknown, row: Row) => (row.url ? isTts ? <audio controls className="h-8 w-64" src={row.url} /> : <Image width={64} height={64} className="object-cover" src={row.url} /> : null) },
+                                    {
+                                        title: t(kind === "label" ? "batch.labels" : isTts ? "batch.text" : "batch.prompt"),
+                                        render: (_: unknown, row: Row) => (
+                                            <Input.TextArea
+                                                autoSize={{ minRows: 1, maxRows: 4 }}
+                                                disabled={running}
+                                                value={row.prompt}
+                                                placeholder={t(`batch.placeholders.${kind}`)}
+                                                onChange={(event) => patch(row.id, { prompt: event.target.value, ...(row.status === "done" ? { status: "idle" as const } : {}) })}
+                                            />
+                                        ),
+                                    },
+                                    {
+                                        title: t("batch.status"),
+                                        width: 200,
+                                        render: (_: unknown, row: Row) =>
+                                            row.status === "error" ? (
+                                                <span className="text-xs text-red-500">{row.error}</span>
+                                            ) : (
+                                                <Tag color={{ idle: "default", running: "processing", done: "success" }[row.status]}>{t(`batch.statuses.${row.status}`)}</Tag>
+                                            ),
+                                    },
+                                    {
+                                        title: t("batch.result"),
+                                        width: isTts ? 280 : 96,
+                                        render: (_: unknown, row: Row) => (row.url ? isTts ? <audio controls className="h-8 w-64" src={row.url} /> : <Image width={64} height={64} className="object-cover" src={row.url} /> : null),
+                                    },
                                     {
                                         title: "",
                                         width: 88,
                                         render: (_: unknown, row: Row) => (
                                             <>
                                                 {!isTts ? <Button type="text" size="small" title={t("common.addToAssets")} disabled={!row.blob || row.saved} icon={<FolderPlus className="size-4" />} onClick={() => void addToAssets([row])} /> : null}
-                                                <Button type="text" size="small" danger disabled={running} icon={<Trash2 className="size-4" />} onClick={() => { revoke(row); setRows((items) => items.filter((item) => item.id !== row.id)); }} />
+                                                <Button
+                                                    type="text"
+                                                    size="small"
+                                                    danger
+                                                    disabled={running}
+                                                    icon={<Trash2 className="size-4" />}
+                                                    onClick={() => {
+                                                        revoke(row);
+                                                        setRows((items) => items.filter((item) => item.id !== row.id));
+                                                    }}
+                                                />
                                             </>
                                         ),
                                     },

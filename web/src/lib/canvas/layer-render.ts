@@ -148,7 +148,21 @@ const layerName = (key: string) => i18n.t(`canvas.layers.names.${key}`);
 const baseLayer = () => ({ id: nanoid(), visible: true, locked: false, rotation: 0, scale: 1, opacity: 1 });
 
 export function createTextLayer(doc: CanvasLayerDoc): CanvasTextLayer {
-    return { ...baseLayer(), type: "text", name: layerName("text"), x: doc.width / 2, y: doc.height / 2, text: i18n.t("canvas.layers.defaultText"), fontFamily: "sans", fontSize: Math.round(doc.width * 0.07), bold: true, color: "#ffffff", strokeColor: "#000000", strokeWidth: Math.round(doc.width * 0.006), align: "center" };
+    return {
+        ...baseLayer(),
+        type: "text",
+        name: layerName("text"),
+        x: doc.width / 2,
+        y: doc.height / 2,
+        text: i18n.t("canvas.layers.defaultText"),
+        fontFamily: "sans",
+        fontSize: Math.round(doc.width * 0.07),
+        bold: true,
+        color: "#ffffff",
+        strokeColor: "#000000",
+        strokeWidth: Math.round(doc.width * 0.006),
+        align: "center",
+    };
 }
 
 export function createLabelLayer(doc: CanvasLayerDoc): CanvasLabelLayer {

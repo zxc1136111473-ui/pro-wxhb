@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { App, Button, ColorPicker, Empty, Input, InputNumber, Modal, Segmented, Select, Slider, Spin, Switch, Tooltip } from "antd";
+import { useCallback, useEffect, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { App, Button, Empty, Input, Modal, Spin, Tooltip } from "antd";
 import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, ImagePlus, Lock, LockOpen, Redo2, Shapes, Sparkles, Tag, Trash2, Type, Undo2, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
+import { LayerProperties } from "@/components/canvas/canvas-layer-properties";
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
-import { cloneLayer, createImageLayer, createLabelLayer, createShapeLayer, createTextLayer, hitLayer, LABEL_STYLES, LABEL_STYLE_IDS, layerSize, renderDoc, SHAPE_KINDS } from "@/lib/canvas/layer-render";
+import { cloneLayer, createImageLayer, createLabelLayer, createShapeLayer, createTextLayer, hitLayer, layerSize, renderDoc } from "@/lib/canvas/layer-render";
 import { cutoutSubject, hasComfyChannel } from "@/services/api/comfyui";
 import { getImageBlob, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useConfigStore } from "@/stores/use-config-store";
@@ -247,7 +248,7 @@ export function CanvasNodeLayerDialog({ open, dataUrl, storageKey, layerDoc, onC
                 let rotation = origin.rotation + ((Math.atan2(point.y - origin.y, point.x - origin.x) - startAngle) * 180) / Math.PI;
                 const nearest = Math.round(rotation / 15) * 15;
                 if (Math.abs(rotation - nearest) < 3) rotation = nearest;
-                patchLayer(origin.id, { rotation: ((rotation + 180) % 360 + 360) % 360 - 180 });
+                patchLayer(origin.id, { rotation: ((((rotation + 180) % 360) + 360) % 360) - 180 });
             }
         };
         const stop = () => controller.abort();
@@ -367,14 +368,40 @@ export function CanvasNodeLayerDialog({ open, dataUrl, storageKey, layerDoc, onC
                         <div className="min-h-0 flex-1 overflow-y-auto p-1">
                             {[...(doc?.layers || [])].reverse().map((layer) => (
                                 <div key={layer.id} className={`group flex items-center gap-1 rounded px-1 py-1 text-xs ${layer.id === selectedId ? "bg-blue-500/15" : "hover:bg-black/5 dark:hover:bg-white/10"}`} onClick={() => setSelectedId(layer.id)}>
-                                    <button type="button" className="p-1 opacity-70 hover:opacity-100" title={t(layer.visible ? "canvas.layers.hide" : "canvas.layers.show")} onClick={(event) => { event.stopPropagation(); editLayer(layer.id, { visible: !layer.visible }); }}>
+                                    <button
+                                        type="button"
+                                        className="p-1 opacity-70 hover:opacity-100"
+                                        title={t(layer.visible ? "canvas.layers.hide" : "canvas.layers.show")}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            editLayer(layer.id, { visible: !layer.visible });
+                                        }}
+                                    >
                                         {layer.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
                                     </button>
-                                    <button type="button" className="p-1 opacity-70 hover:opacity-100" title={t(layer.locked ? "canvas.layers.unlock" : "canvas.layers.lock")} onClick={(event) => { event.stopPropagation(); editLayer(layer.id, { locked: !layer.locked }); }}>
+                                    <button
+                                        type="button"
+                                        className="p-1 opacity-70 hover:opacity-100"
+                                        title={t(layer.locked ? "canvas.layers.unlock" : "canvas.layers.lock")}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            editLayer(layer.id, { locked: !layer.locked });
+                                        }}
+                                    >
                                         {layer.locked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
                                     </button>
                                     {renamingId === layer.id ? (
-                                        <Input size="small" autoFocus defaultValue={layer.name} onClick={(event) => event.stopPropagation()} onBlur={(event) => { editLayer(layer.id, { name: event.target.value.trim() || layer.name }); setRenamingId(null); }} onPressEnter={(event) => event.currentTarget.blur()} />
+                                        <Input
+                                            size="small"
+                                            autoFocus
+                                            defaultValue={layer.name}
+                                            onClick={(event) => event.stopPropagation()}
+                                            onBlur={(event) => {
+                                                editLayer(layer.id, { name: event.target.value.trim() || layer.name });
+                                                setRenamingId(null);
+                                            }}
+                                            onPressEnter={(event) => event.currentTarget.blur()}
+                                        />
                                     ) : (
                                         <span className="min-w-0 flex-1 truncate" onDoubleClick={() => setRenamingId(layer.id)} title={t("canvas.layers.renameHint")}>
                                             {layer.name}
@@ -384,7 +411,15 @@ export function CanvasNodeLayerDialog({ open, dataUrl, storageKey, layerDoc, onC
                             ))}
                             {doc ? (
                                 <div className="flex items-center gap-1 rounded px-1 py-1 text-xs opacity-80">
-                                    <button type="button" className="p-1 hover:opacity-100" title={t(doc.baseVisible ? "canvas.layers.hide" : "canvas.layers.show")} onClick={() => { pushHistory(); setDoc({ ...doc, baseVisible: !doc.baseVisible }); }}>
+                                    <button
+                                        type="button"
+                                        className="p-1 hover:opacity-100"
+                                        title={t(doc.baseVisible ? "canvas.layers.hide" : "canvas.layers.show")}
+                                        onClick={() => {
+                                            pushHistory();
+                                            setDoc({ ...doc, baseVisible: !doc.baseVisible });
+                                        }}
+                                    >
                                         {doc.baseVisible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
                                     </button>
                                     <span className="p-1">
@@ -427,7 +462,16 @@ export function CanvasNodeLayerDialog({ open, dataUrl, storageKey, layerDoc, onC
                             <Button size="small" icon={<Upload className="size-4" />} disabled={!doc} onClick={() => fileRef.current?.click()}>
                                 {t("canvas.layers.add.upload")}
                             </Button>
-                            <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => { void handleUploadFile(event.target.files?.[0]); event.target.value = ""; }} />
+                            <input
+                                ref={fileRef}
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                onChange={(event) => {
+                                    void handleUploadFile(event.target.files?.[0]);
+                                    event.target.value = "";
+                                }}
+                            />
                             <Tooltip title={hasComfy ? t("canvas.layers.cutoutHint") : t("comfyui.noChannel")}>
                                 <span>
                                     <Button size="small" icon={<Sparkles className="size-4" />} disabled={!doc || !hasComfy} onClick={() => void runCutout()}>
@@ -457,15 +501,33 @@ export function CanvasNodeLayerDialog({ open, dataUrl, storageKey, layerDoc, onC
                                     {selected && size && selected.visible ? (
                                         <div
                                             className="pointer-events-none absolute border border-blue-500"
-                                            style={{ left: selected.x * stageScale, top: selected.y * stageScale, width: size.width * selected.scale * stageScale, height: size.height * selected.scale * stageScale, transform: `translate(-50%, -50%) rotate(${selected.rotation}deg)` }}
+                                            style={{
+                                                left: selected.x * stageScale,
+                                                top: selected.y * stageScale,
+                                                width: size.width * selected.scale * stageScale,
+                                                height: size.height * selected.scale * stageScale,
+                                                transform: `translate(-50%, -50%) rotate(${selected.rotation}deg)`,
+                                            }}
                                         >
                                             {!selected.locked ? (
                                                 <>
                                                     {corners.map((corner) => (
-                                                        <button key={`${corner.x}${corner.y}`} type="button" className="pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize rounded-sm border border-blue-500 bg-white" style={{ left: `${corner.x * 100}%`, top: `${corner.y * 100}%` }} onPointerDown={(event) => startDrag("scale", selected, event)} aria-label={t("canvas.layers.scale")} />
+                                                        <button
+                                                            key={`${corner.x}${corner.y}`}
+                                                            type="button"
+                                                            className="pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize rounded-sm border border-blue-500 bg-white"
+                                                            style={{ left: `${corner.x * 100}%`, top: `${corner.y * 100}%` }}
+                                                            onPointerDown={(event) => startDrag("scale", selected, event)}
+                                                            aria-label={t("canvas.layers.scale")}
+                                                        />
                                                     ))}
                                                     <span className="absolute left-1/2 top-0 h-5 w-px -translate-y-full bg-blue-500" />
-                                                    <button type="button" className="pointer-events-auto absolute left-1/2 top-0 size-3 -translate-x-1/2 -translate-y-[calc(100%+20px)] cursor-grab rounded-full border border-blue-500 bg-white" onPointerDown={(event) => startDrag("rotate", selected, event)} aria-label={t("canvas.layers.rotate")} />
+                                                    <button
+                                                        type="button"
+                                                        className="pointer-events-auto absolute left-1/2 top-0 size-3 -translate-x-1/2 -translate-y-[calc(100%+20px)] cursor-grab rounded-full border border-blue-500 bg-white"
+                                                        onPointerDown={(event) => startDrag("rotate", selected, event)}
+                                                        aria-label={t("canvas.layers.rotate")}
+                                                    />
                                                 </>
                                             ) : null}
                                         </div>
@@ -477,98 +539,7 @@ export function CanvasNodeLayerDialog({ open, dataUrl, storageKey, layerDoc, onC
                     </section>
 
                     <aside className="w-64 shrink-0 overflow-y-auto rounded-lg border p-3">
-                        {selected ? (
-                            <div className="space-y-3 text-xs">
-                                {selected.type === "text" ? (
-                                    <>
-                                        <Field label={t("canvas.layers.props.content")}>
-                                            <Input.TextArea rows={3} value={selected.text} onChange={(event) => update({ text: event.target.value }, "text")} />
-                                        </Field>
-                                        <div className="flex items-center gap-2">
-                                            <Select className="flex-1" size="small" value={selected.fontFamily} onChange={(fontFamily) => update({ fontFamily })} options={(["sans", "serif", "mono"] as const).map((value) => ({ value, label: t(`canvas.layers.props.fonts.${value}`) }))} />
-                                            <Switch size="small" checked={selected.bold} onChange={(bold) => update({ bold })} />
-                                            <span>{t("canvas.layers.props.bold")}</span>
-                                        </div>
-                                        <Field label={t("canvas.layers.props.fontSize")}>
-                                            <InputNumber size="small" min={8} max={1000} value={selected.fontSize} onChange={(value) => update({ fontSize: value ?? selected.fontSize }, "fontSize")} />
-                                        </Field>
-                                        <div className="flex items-center gap-3">
-                                            <Field label={t("canvas.layers.props.color")}>
-                                                <ColorPicker size="small" disabledAlpha value={selected.color} onChange={(color) => update({ color: color.toHexString() }, "color")} />
-                                            </Field>
-                                            <Field label={t("canvas.layers.props.strokeColor")}>
-                                                <ColorPicker size="small" disabledAlpha value={selected.strokeColor} onChange={(color) => update({ strokeColor: color.toHexString() }, "strokeColor")} />
-                                            </Field>
-                                            <Field label={t("canvas.layers.props.strokeWidth")}>
-                                                <InputNumber className="w-16" size="small" min={0} max={200} value={selected.strokeWidth} onChange={(value) => update({ strokeWidth: value ?? 0 }, "strokeWidth")} />
-                                            </Field>
-                                        </div>
-                                        <Segmented size="small" block value={selected.align} onChange={(align) => update({ align: align as "left" | "center" | "right" })} options={(["left", "center", "right"] as const).map((value) => ({ value, label: t(`canvas.layers.props.aligns.${value}`) }))} />
-                                    </>
-                                ) : null}
-                                {selected.type === "label" ? (
-                                    <>
-                                        <Field label={t("canvas.layers.props.content")}>
-                                            <Input.TextArea rows={2} value={selected.text} onChange={(event) => update({ text: event.target.value }, "text")} />
-                                        </Field>
-                                        <Field label={t("canvas.layers.props.style")}>
-                                            <Select size="small" className="w-full" value={selected.style} onChange={(style) => update({ style })} options={LABEL_STYLE_IDS.map((value) => ({ value, label: <span className="flex items-center gap-2"><i className="inline-block size-3 rounded-sm border" style={{ background: LABEL_STYLES[value].bg || LABEL_STYLES[value].stroke || "#fff" }} />{t(`canvas.layers.props.styles.${value}`)}</span> }))} />
-                                        </Field>
-                                        <Field label={t("canvas.layers.props.shape")}>
-                                            <Select size="small" className="w-full" value={selected.shape} onChange={(shape) => update({ shape })} options={SHAPE_KINDS.map((value) => ({ value, label: t(`canvas.layers.props.shapes.${value}`) }))} />
-                                        </Field>
-                                        <Field label={t("canvas.layers.props.fontSize")}>
-                                            <InputNumber size="small" min={8} max={1000} value={selected.fontSize} onChange={(value) => update({ fontSize: value ?? selected.fontSize }, "fontSize")} />
-                                        </Field>
-                                    </>
-                                ) : null}
-                                {selected.type === "shape" ? (
-                                    <>
-                                        <Field label={t("canvas.layers.props.shape")}>
-                                            <Select size="small" className="w-full" value={selected.shape} onChange={(shape) => update({ shape })} options={SHAPE_KINDS.map((value) => ({ value, label: t(`canvas.layers.props.shapes.${value}`) }))} />
-                                        </Field>
-                                        <div className="flex items-center gap-2">
-                                            <Field label={t("canvas.layers.props.width")}>
-                                                <InputNumber className="w-24" size="small" min={1} max={20000} value={Math.round(selected.width)} onChange={(value) => update({ width: value ?? selected.width }, "width")} />
-                                            </Field>
-                                            <Field label={t("canvas.layers.props.height")}>
-                                                <InputNumber className="w-24" size="small" min={1} max={20000} value={Math.round(selected.height)} onChange={(value) => update({ height: value ?? selected.height }, "height")} />
-                                            </Field>
-                                        </div>
-                                        <Button size="small" block onClick={() => doc && update({ shape: "rect", x: doc.width / 2, y: doc.height / 2, rotation: 0, scale: 1, width: doc.width, height: doc.height })}>
-                                            {t("canvas.layers.props.fitCanvas")}
-                                        </Button>
-                                        <div className="flex items-center gap-3">
-                                            <Field label={t("canvas.layers.props.fill")}>
-                                                <ColorPicker size="small" disabledAlpha value={selected.fill} onChange={(color) => update({ fill: color.toHexString() }, "fill")} />
-                                            </Field>
-                                            <Field label={t("canvas.layers.props.strokeColor")}>
-                                                <ColorPicker size="small" disabledAlpha value={selected.strokeColor} onChange={(color) => update({ strokeColor: color.toHexString() }, "strokeColor")} />
-                                            </Field>
-                                            <Field label={t("canvas.layers.props.strokeWidth")}>
-                                                <InputNumber className="w-16" size="small" min={0} max={400} value={selected.strokeWidth} onChange={(value) => update({ strokeWidth: value ?? 0 }, "strokeWidth")} />
-                                            </Field>
-                                        </div>
-                                    </>
-                                ) : null}
-                                <Field label={t("canvas.layers.props.opacity")}>
-                                    <Slider min={0} max={100} value={Math.round(selected.opacity * 100)} onChange={(value) => update({ opacity: value / 100 }, "opacity")} />
-                                </Field>
-                                <Field label={t("canvas.layers.props.rotation")}>
-                                    <InputNumber size="small" min={-180} max={180} value={Math.round(selected.rotation)} onChange={(value) => update({ rotation: value ?? 0 }, "rotation")} />
-                                </Field>
-                                <div className="flex gap-2">
-                                    <Button size="small" className="flex-1" onClick={() => doc && update({ x: doc.width / 2 })}>
-                                        {t("canvas.layers.props.centerH")}
-                                    </Button>
-                                    <Button size="small" className="flex-1" onClick={() => doc && update({ y: doc.height / 2 })}>
-                                        {t("canvas.layers.props.centerV")}
-                                    </Button>
-                                </div>
-                            </div>
-                        ) : (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("canvas.layers.empty")} />
-                        )}
+                        {selected && doc ? <LayerProperties layer={selected} canvas={doc} onChange={update} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("canvas.layers.empty")} />}
                     </aside>
                 </div>
                 <div className="mt-3 flex items-center justify-end gap-2">
@@ -583,14 +554,5 @@ export function CanvasNodeLayerDialog({ open, dataUrl, storageKey, layerDoc, onC
             </Spin>
             <AssetPickerModal open={pickerOpen} onInsert={(payload) => void handleInsertAsset(payload)} onClose={() => setPickerOpen(false)} />
         </Modal>
-    );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-    return (
-        <label className="block space-y-1">
-            <span className="block opacity-60">{label}</span>
-            {children}
-        </label>
     );
 }

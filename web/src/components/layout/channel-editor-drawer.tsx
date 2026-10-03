@@ -1,11 +1,13 @@
 import { Button, Drawer, Input, Segmented, Select, Space } from "antd";
 import { ListPlus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
-import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
+
+// 脚本编辑器带着 CodeMirror（约 350KB），只有第一次点「调用脚本」时才下载
+const ModelScriptEditor = lazy(() => import("./model-script-editor").then((module) => ({ default: module.ModelScriptEditor })));
 
 type ScriptTarget = { name: string; capability: ModelCapability; value: string };
 
@@ -14,6 +16,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     const [draft, setDraft] = useState<ModelChannel | null>(channel);
     const [selectOpen, setSelectOpen] = useState(false);
     const [scriptTarget, setScriptTarget] = useState<ScriptTarget | null>(null);
+    const [scriptEditorUsed, setScriptEditorUsed] = useState(false);
     const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
         { label: "OpenAI", value: "openai" },
         { label: "Gemini", value: "gemini" },
@@ -102,7 +105,15 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                             </span>
                             <div className="flex shrink-0 items-center gap-2">
                                 <Segmented size="small" value={model.capability} options={capabilityOptions} onChange={(value) => setCapability(model.name, value as ModelCapability)} />
-                                <Button size="small" type={model.script ? "primary" : "default"} ghost={Boolean(model.script)} onClick={() => setScriptTarget({ name: model.name, capability: model.capability, value: model.script || "" })}>
+                                <Button
+                                    size="small"
+                                    type={model.script ? "primary" : "default"}
+                                    ghost={Boolean(model.script)}
+                                    onClick={() => {
+                                        setScriptEditorUsed(true);
+                                        setScriptTarget({ name: model.name, capability: model.capability, value: model.script || "" });
+                                    }}
+                                >
                                     {t(model.script ? "config.channelEditor.scriptReady" : "config.channelEditor.script")}
                                 </Button>
                                 <Button size="small" danger type="text" icon={<Trash2 className="size-3.5" />} onClick={() => removeModel(model.name)} />
@@ -116,14 +127,18 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
 
             <ModelSelectModal open={selectOpen} channel={draft} selectedNames={draft.models.map((model) => model.name)} onConfirm={applySelection} onClose={() => setSelectOpen(false)} />
 
-            <ModelScriptEditor
-                open={Boolean(scriptTarget)}
-                capability={scriptTarget?.capability || "text"}
-                modelName={scriptTarget?.name || ""}
-                value={scriptTarget?.value || ""}
-                onSave={(script) => scriptTarget && setScript(scriptTarget.name, script)}
-                onClose={() => setScriptTarget(null)}
-            />
+            {scriptEditorUsed ? (
+                <Suspense fallback={null}>
+                    <ModelScriptEditor
+                        open={Boolean(scriptTarget)}
+                        capability={scriptTarget?.capability || "text"}
+                        modelName={scriptTarget?.name || ""}
+                        value={scriptTarget?.value || ""}
+                        onSave={(script) => scriptTarget && setScript(scriptTarget.name, script)}
+                        onClose={() => setScriptTarget(null)}
+                    />
+                </Suspense>
+            ) : null}
         </Drawer>
     );
 }

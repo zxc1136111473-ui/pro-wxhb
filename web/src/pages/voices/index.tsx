@@ -118,9 +118,27 @@ export default function VoicesPage() {
                                         width: 150,
                                         render: (_, row) => (
                                             <div className="flex gap-1">
-                                                <Button type="text" size="small" title={t("voices.preview")} loading={busy === `play:${row.voice}`} icon={<Play className="size-4" />} onClick={() => void run(`play:${row.voice}`, async () => play(await previewVoice(row.voice, t("voices.previewSentence"))))} />
+                                                <Button
+                                                    type="text"
+                                                    size="small"
+                                                    title={t("voices.preview")}
+                                                    loading={busy === `play:${row.voice}`}
+                                                    icon={<Play className="size-4" />}
+                                                    onClick={() => void run(`play:${row.voice}`, async () => play(await previewVoice(row.voice, t("voices.previewSentence"))))}
+                                                />
                                                 <Button type="text" size="small" title={t("common.copy")} icon={<Copy className="size-4" />} onClick={() => copyText(row.voice)} />
-                                                <Popconfirm title={t("voices.deleteConfirm")} okText={t("common.delete")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={() => void run(`del:${row.voice}`, async () => { await deleteVoice(row.voice); setRows((items) => items.filter((item) => item.voice !== row.voice)); })}>
+                                                <Popconfirm
+                                                    title={t("voices.deleteConfirm")}
+                                                    okText={t("common.delete")}
+                                                    cancelText={t("common.cancel")}
+                                                    okButtonProps={{ danger: true }}
+                                                    onConfirm={() =>
+                                                        void run(`del:${row.voice}`, async () => {
+                                                            await deleteVoice(row.voice);
+                                                            setRows((items) => items.filter((item) => item.voice !== row.voice));
+                                                        })
+                                                    }
+                                                >
                                                     <Button type="text" size="small" danger title={t("common.delete")} loading={busy === `del:${row.voice}`} icon={<Trash2 className="size-4" />} />
                                                 </Popconfirm>
                                             </div>
@@ -150,7 +168,16 @@ export default function VoicesPage() {
                 </Form>
             </Modal>
 
-            <Modal open={modal === "clone"} title={t("voices.clone")} okText={t("voices.create")} cancelText={t("common.cancel")} confirmLoading={busy === "clone"} onCancel={() => setModal(null)} onOk={() => cloneForm.submit()} afterClose={() => (sampleRef.current = null)}>
+            <Modal
+                open={modal === "clone"}
+                title={t("voices.clone")}
+                okText={t("voices.create")}
+                cancelText={t("common.cancel")}
+                confirmLoading={busy === "clone"}
+                onCancel={() => setModal(null)}
+                onOk={() => cloneForm.submit()}
+                afterClose={() => (sampleRef.current = null)}
+            >
                 <Form form={cloneForm} layout="vertical" initialValues={{ name: "myclone" }} onFinish={submitClone}>
                     <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">{t("voices.cloneHint")}</p>
                     <Form.Item label={t("voices.sampleFile")}>

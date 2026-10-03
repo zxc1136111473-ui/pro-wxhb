@@ -112,7 +112,10 @@ export async function getTtsChoices(signal?: AbortSignal): Promise<TtsChoices> {
 export async function runTts(job: TtsOptions & { text: string }, signal?: AbortSignal) {
     const out = await runComfyGraph(
         aliGraph({
-            "2": { class_type: "ProAliTTS", inputs: { text: job.text, voice: job.voice, model: job.model, language: job.language, instructions: job.instructions, speed: job.speed, volume_db: job.volumeDb, custom_voice: job.customVoice.trim(), info: ["31", 0] } },
+            "2": {
+                class_type: "ProAliTTS",
+                inputs: { text: job.text, voice: job.voice, model: job.model, language: job.language, instructions: job.instructions, speed: job.speed, volume_db: job.volumeDb, custom_voice: job.customVoice.trim(), info: ["31", 0] },
+            },
             "3": saveAudio("2", "batch/tts"),
         }),
         { signal },
@@ -166,7 +169,11 @@ export function imageGraph(template: ImageTemplate, job: ImageJob, file?: string
     }
     if (!file) throw new Error(text("needImage"));
     if (template === "edit") {
-        return aliGraph({ "10": { class_type: "LoadImage", inputs: { image: file } }, "2": { class_type: "ProAliImageEdit", inputs: { prompt: job.prompt, model: "qwen-image-edit-max", seed, image1: ["10", 0], info: ["31", 0] } }, ...save("2", "canvas/edit") });
+        return aliGraph({
+            "10": { class_type: "LoadImage", inputs: { image: file } },
+            "2": { class_type: "ProAliImageEdit", inputs: { prompt: job.prompt, model: "qwen-image-edit-max", seed, image1: ["10", 0], info: ["31", 0] } },
+            ...save("2", "canvas/edit"),
+        });
     }
     const labels = job.prompt.split("|").map((item) => item.trim());
     const inputs: Record<string, unknown> = { shape: "圆角矩形", margin_pct: 3, image: ["10", 0] };
