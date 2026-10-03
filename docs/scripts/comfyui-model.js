@@ -28,7 +28,7 @@ function buildGraph(prompt, files) {
     if (mode === "hd") {
         const [w, h] = (params.size || "1024x1024").split("x").map(Number);
         const ratio = Object.keys(RATIOS).reduce((a, b) => (Math.abs(RATIOS[b] - w / h) < Math.abs(RATIOS[a] - w / h) ? b : a));
-        return { 2: { class_type: "ProAliImage", inputs: { prompt, model: "qwen-image-2.0-pro", ratio, level: Math.max(w, h) > 1500 ? "2K" : "1K", seed, info: ["31", 0] } }, 31: ALI, 90: { class_type: "SaveImage", inputs: { filename_prefix: "canvas/hd", images: ["2", 0] } }, 91: { class_type: "PreviewAny", inputs: { source: ["2", 1] } } };
+        return { 2: { class_type: "ProAliImage", inputs: { prompt: prompt.replace(/^(参考图片编号|Reference image labels)[^\n]*\n\n/, ""), model: "qwen-image-2.0-pro", ratio, level: Math.max(w, h) > 1500 ? "2K" : "1K", seed, info: ["31", 0] } }, 31: ALI, 90: { class_type: "SaveImage", inputs: { filename_prefix: "canvas/hd", images: ["2", 0] } }, 91: { class_type: "PreviewAny", inputs: { source: ["2", 1] } } };
     }
     if (!files.length) throw new Error("需要连一张参考图");
     const load = files.map((f, i) => [`${10 + i}`, { class_type: "LoadImage", inputs: { image: f } }]);
@@ -36,7 +36,8 @@ function buildGraph(prompt, files) {
         const images = Object.fromEntries(files.slice(0, 3).map((_, i) => [`image${i + 1}`, [`${10 + i}`, 0]]));
         return { ...Object.fromEntries(load), 2: { class_type: "ProAliImageEdit", inputs: { prompt, model: "qwen-image-edit-max", seed, info: ["31", 0], ...images } }, 31: ALI, 90: { class_type: "SaveImage", inputs: { filename_prefix: "canvas/edit", images: ["2", 0] } }, 91: { class_type: "PreviewAny", inputs: { source: ["2", 1] } } };
     }
-    const labels = prompt.split("|").map((s) => s.trim());
+    // 画布在有参考图时会在提示词前加一段「参考图片编号…」说明（还可能有系统提示词），都以空行隔开；标签文字取最后一段
+    const labels = prompt.split("\n\n").pop().split("|").map((s) => s.trim());
     const pos = ["左上", "右下", "左下"], style = ["红底白字", "黄底黑字", "黑底金字"], size = [5, 6, 4.5];
     const lab = { shape: "圆角矩形", margin_pct: 3, image: ["10", 0] };
     [0, 1, 2].forEach((i) => Object.assign(lab, { [`text${i + 1}`]: labels[i] || "", [`position${i + 1}`]: pos[i], [`style${i + 1}`]: style[i], [`size${i + 1}_pct`]: size[i] }));

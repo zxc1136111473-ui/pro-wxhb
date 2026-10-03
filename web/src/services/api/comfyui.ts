@@ -28,11 +28,29 @@ function comfyChannel() {
 
 export const hasComfyChannel = (channels: { models: { name: string }[] }[]) => channels.some((item) => item.models.some((model) => model.name.startsWith("comfy-")));
 
+type ErrorBody = { error?: { message?: string }; node_errors?: Record<string, { errors?: { message?: string; details?: string }[] }> };
+
+/** axios 的默认报错只有 "status code 502"，这里换成能直接照着排查的话：连不上 / 账号密码错 / ComfyUI 校验失败的具体原因。 */
+function explainError(error: unknown) {
+    if (!axios.isAxiosError<ErrorBody>(error) || axios.isCancel(error)) return error;
+    if (!error.response) return new Error(text("networkError"));
+    if (error.response.status === 401) return new Error(text("unauthorized"));
+    const body = error.response.data;
+    const detail = [body?.error?.message, ...Object.values(body?.node_errors || {}).flatMap((node) => (node.errors || []).map((item) => [item.message, item.details].filter(Boolean).join(": ")))].filter(Boolean).join("；");
+    return new Error(detail || text("httpError", { status: error.response.status }));
+}
+
 function client() {
     const channel = comfyChannel();
     const base = channel.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
     const headers = { Authorization: "Basic " + btoa(unescape(encodeURIComponent(channel.apiKey))) };
-    return (config: AxiosRequestConfig & { url: string }) => axios.request({ ...config, url: withLocalProxy(base + config.url), headers }).then((response) => response.data);
+    return async (config: AxiosRequestConfig & { url: string }) => {
+        try {
+            return (await axios.request({ ...config, url: withLocalProxy(base + config.url), headers })).data;
+        } catch (error) {
+            throw explainError(error);
+        }
+    };
 }
 
 export async function uploadToComfy(file: Blob, name: string, signal?: AbortSignal) {

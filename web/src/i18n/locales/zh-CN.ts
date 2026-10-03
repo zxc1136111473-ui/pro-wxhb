@@ -395,6 +395,9 @@ export default {
     comfyui: {
         noChannel: "请先在配置里添加 ComfyUI 渠道：地址填 ComfyUI 服务，密钥填「账号:密码」，并添加名字以 comfy- 开头的模型",
         needImage: "这个模板需要一张参考图",
+        networkError: "连不上 ComfyUI：检查渠道地址是否正确、服务是否在线；网页和 ComfyUI 不同域名时，ComfyUI 前面的反代要放行本站点的跨域（CORS），或在配置里打开本地代理",
+        unauthorized: "账号或密码不对：渠道的密钥要填「账号:密码」",
+        httpError: "ComfyUI 返回 HTTP {{status}}",
         runFailed: "ComfyUI 运行失败",
         timeout: "等待 ComfyUI 超时",
     },

@@ -395,6 +395,9 @@ export default {
     comfyui: {
         noChannel: "Add a ComfyUI provider in Settings first: base URL is the ComfyUI server, API key is user:password, and add a model whose name starts with comfy-",
         needImage: "This template needs a reference image",
+        networkError: "Cannot reach ComfyUI: check the provider address and that the service is up; when the site and ComfyUI are on different domains, the proxy in front of ComfyUI must allow this site (CORS), or turn on the local proxy in Settings",
+        unauthorized: "Wrong username or password: the provider API key must be user:password",
+        httpError: "ComfyUI returned HTTP {{status}}",
         runFailed: "ComfyUI run failed",
         timeout: "Timed out waiting for ComfyUI",
     },

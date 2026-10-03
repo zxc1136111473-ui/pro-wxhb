@@ -31,7 +31,7 @@ export default function VoicesPage() {
         audioRef.current?.pause();
         const audio = new Audio(URL.createObjectURL(blob));
         audioRef.current = audio;
-        void audio.play();
+        audio.play().catch(() => undefined);
     };
 
     const run = async (key: string, action: () => Promise<void>) => {
