@@ -1,6 +1,6 @@
 // 画布「图片」脚本模型：直连 ComfyUI，同一段脚本按模型名区分三个工作流。
 // 用法：设置 → 渠道 → 新建渠道
-//   baseUrl = ComfyUI 地址（如 https://cfy.wqyhr.com，不要带 /v1）
+//   baseUrl = ComfyUI 地址（如 https://comfy.example.com，不要带 /v1）
 //   apiKey  = 账号:密码（ComfyUI 前面 Caddy basic_auth 的账号密码）
 //   模型（能力选「图片」，都粘贴这段脚本）：
 //     comfy-高清出图   文生图，阿里 qwen-image-2.0-pro，尺寸/比例取画布设置（最长边 >1500 用 2K，否则 1K）
