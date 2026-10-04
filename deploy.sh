@@ -36,6 +36,7 @@ ZFC_JSON=0           # 1 = 末尾输出一行 JSON，给调用方解析
 ZFC_ACTION=""        # install|update|uninstall|check|port|https|analytics|mirror|logs|restart|data|menu
 ZFC_DIR=""           # --dir：安装目录（默认 /opt/infinite-canvas）
 ZFC_PORT=""          # --port：监听端口（默认 3000）
+ZFC_BIND=""          # --bind <地址>：端口只绑这个地址（不给 = 所有网卡；前面有反代时用 127.0.0.1，别把端口直接露在公网）
 ZFC_MODE=""          # --mode image|build：官方镜像 或 本地源码构建
 ZFC_MIRROR=""        # --mirror <前缀>：ghcr.io 拉不动时用镜像加速前缀
 ZFC_DOMAIN=""        # --domain：配 HTTPS 的域名
@@ -151,8 +152,8 @@ port_busy() {
 }
 port_check() {
   local p="$1"
-  [[ "$p" =~ ^[0-9]+$ ]] || die "端口要是数字（你填的是 $p）"
-  [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || die "端口要在 1~65535 之间（你填的是 $p）"
+  [[ "$p" =~ ^[0-9]+$ ]] || die "端口要是数字（你填的是 ${p}）"
+  [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || die "端口要在 1~65535 之间（你填的是 ${p}）"
   if [ "$p" -lt 1024 ] && [ "$(id -u)" -ne 0 ]; then
     warn "$p 是特权端口（<1024），普通用户绑不上"
   fi
@@ -194,12 +195,14 @@ CANVAS_GIT="https://github.com/zxc1136111473-ui/pro-wxhb.git"
 # 一条命令重建容器：读状态文件里的 port/mode/mirror/analytics，全量重起。
 run_container() {
   docker_ok || die "Docker 没就绪。先装：$(self_cmd) 里选「装 Docker」，或 apt install docker.io"
-  local port mode mirror ga4 baidu
+  local port mode mirror ga4 baidu bind publish
   port="$(state_read port 3000)"
   mode="$(state_read mode image)"
   mirror="$(state_read mirror '')"
   ga4="$(state_read analytics_ga4 '')"
   baidu="$(state_read analytics_baidu '')"
+  bind="$(state_read bind '')"
+  publish="$port:3000"; [ -z "$bind" ] || publish="$bind:$port:3000"
 
   # 先备好镜像再删旧容器 —— 构建/拉取失败时旧服务不停
   # ZFC_NO_PULL=1（改端口 / 改统计 / 重启兜底）：本地已有镜像就直接用，不重新拉取或构建，
@@ -240,14 +243,14 @@ run_container() {
   # nginx 的访问日志走 stdout：公网站点不轮转会一直涨，同机还有别的项目
   $DOCKER run -d --name "$CONTAINER" --restart unless-stopped \
     --log-driver json-file --log-opt max-size="$LOG_MAX_SIZE" --log-opt max-file="$LOG_MAX_FILE" \
-    -p "$port:3000" ${envs[@]+"${envs[@]}"} "$img" >/dev/null \
+    -p "$publish" ${envs[@]+"${envs[@]}"} "$img" >/dev/null \
     || die "容器起不来。看上面报错（端口被占？用菜单 4 换端口）"
 
   # 等它就绪（nginx 起来 + HTTP 200）
   local tries=0
   while [ $tries -lt 15 ]; do
     if curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:$port/" 2>/dev/null; then
-      ok "服务就绪：http://127.0.0.1:$port/（镜像 $img）"
+      ok "服务就绪：http://127.0.0.1:$port/（镜像 ${img}）"
       json_out "install" "port=$port mode=$mode"
       return 0
     fi
@@ -456,9 +459,10 @@ https_wizard() {
 # ── 体检 ───────────────────────────────────────────────────────────────────
 do_check() {
   docker_ok || { warn "Docker 没就绪"; return 1; }
-  local port domain
+  local port domain bind
   port="$(state_read port 3000)"
   domain="$(state_read domain '')"
+  bind="$(state_read bind '')"
   say ""
   say "  容器："
   $DOCKER ps --filter "name=$CONTAINER" --format '    {{.Names}}  {{.Status}}  {{.Ports}}' || true
@@ -475,7 +479,11 @@ do_check() {
   local ips=""
   ips="$(hostname -I 2>/dev/null | awk '{print $1}')"
   [ -z "$ips" ] && ips="$(ip -4 addr show 2>/dev/null | grep -oE 'inet [0-9.]+' | awk '{print $2}' | grep -v '^127\.' | head -1)"
-  say "    http://${ips:-<本机IP>}:$port/"
+  if [ -n "$bind" ] && [ "$bind" != "0.0.0.0" ]; then
+    say "    http://$bind:$port/（端口只绑 ${bind}，对外靠前面的反代）"
+  else
+    say "    http://${ips:-<本机IP>}:$port/"
+  fi
   [ -n "$domain" ] && say "    https://$domain/"
   [ -z "$domain" ] && say "    （还没配 HTTPS，菜单选 5 补上）"
   say ""
@@ -557,7 +565,7 @@ do_uninstall() {
   local wipe="${1:-0}"
   say ""
   if [ "$wipe" = "1" ]; then
-    say "  ${RED}卸载并删掉安装目录${RST}（$APP_DIR）。"
+    say "  ${RED}卸载并删掉安装目录${RST}（${APP_DIR}）。"
   else
     say "  卸载：停容器，保留安装目录和状态文件。"
   fi
@@ -568,7 +576,7 @@ do_uninstall() {
     rm -rf "$APP_DIR"
     ok "安装目录已删除：$APP_DIR"
   else
-    say "安装目录保留：$APP_DIR（以后想再起，回这里跑 deploy.sh 选 1）"
+    say "安装目录保留：${APP_DIR}（以后想再起，回这里跑 deploy.sh 选 1）"
   fi
   json_out "uninstall" "wipe=$wipe"
 }
@@ -583,6 +591,7 @@ while [ $# -gt 0 ]; do
     --purge)          PURGE=1 ;;
     --check)          ZFC_ACTION="check" ;;
     --port)           ZFC_PORT="${2:?--port 后面要给个端口}"; shift ;;
+    --bind)           ZFC_BIND="${2:?--bind 后面要给地址，如 127.0.0.1}"; shift ;;
     --dir)            ZFC_DIR="${2:?--dir 后面要给个目录}"; shift ;;
     --mode)           ZFC_MODE="${2:?--mode 后面要 image 或 build}"; shift ;;
     --mirror)         ZFC_MIRROR="${2:?--mirror 后面要给镜像前缀}"; shift ;;
@@ -609,6 +618,7 @@ while [ $# -gt 0 ]; do
       say "安装选项："
       say "  --dir <目录>        安装目录（默认 /opt/infinite-canvas）"
       say "  --port <n>          监听端口（默认 3000）"
+      say "  --bind <地址>       端口只绑这个地址（默认所有网卡；前面有反代时用 127.0.0.1，别把端口直接露在公网）"
       say "  --mode image|build  官方镜像 / 本地源码构建（默认 image）"
       say "  --mirror <前缀>     ghcr.io 拉不动时用镜像加速前缀"
       say "  --analytics-ga4 <id>   开启 GA4 统计"
@@ -661,7 +671,7 @@ INSTALLED=0
 docker_ok && [ "$($DOCKER ps -aq --filter "name=$CONTAINER" 2>/dev/null | wc -l | tr -d ' ')" -ge 1 ] && INSTALLED=1
 
 if [ "$INSTALLED" = "1" ] && [ "$ZFC_ACTION" != "install" ]; then
-  say "这台机器上${BLD}已经装过${RST}了（容器 $CONTAINER，端口 $(state_read port 3000)）"
+  say "这台机器上${BLD}已经装过${RST}了（容器 ${CONTAINER}，端口 $(state_read port 3000)）"
   say ""
   say "  1) ${BLD}全新安装${RST} / 重新部署（容器只有一个，换目录会替换现有这套）"
   say "  2) ${BLD}更新到最新版${RST}（本地构建先 git pull 再重建 / 官方镜像重新拉 —— 浏览器里的数据不受影响）"
@@ -756,8 +766,9 @@ state_load
 if [ -n "$ZFC_PORT" ]; then PORT="$ZFC_PORT"; else PORT="$(state_read port 3000)"; fi
 ask PORT "服务监听端口" "$PORT"
 port_check "$PORT"
-# 自家容器占着同一个端口（重新部署这一套）不算冲突，run_container 会先删旧容器
-if [ "$INSTALLED" = "0" ] || [ "$PORT" != "$(state_read port '')" ]; then
+# 自家容器占着同一个端口（重新部署这一套，包括没有状态文件的老部署，比如 deploy-remote.sh 部署的）不算冲突，run_container 会先删旧容器
+own_port() { $DOCKER port "$CONTAINER" 2>/dev/null | grep -qE ":$1\$"; }
+if { [ "$INSTALLED" = "0" ] || [ "$PORT" != "$(state_read port '')" ]; } && ! own_port "$PORT"; then
   port_busy "$PORT" && die "端口 $PORT 被别的进程占着（换一个，或先停掉占用的进程）"
 fi
 
@@ -797,6 +808,7 @@ ask_opt GA4 "GA4 衡量 ID" "$(state_read analytics_ga4 '')"
 ask_opt BAIDU "百度统计 ID" "$(state_read analytics_baidu '')"
 
 state_write port "$PORT"
+[ -z "$ZFC_BIND" ] || state_write bind "$ZFC_BIND"
 state_write mode "$MODE"
 state_write analytics_ga4 "$GA4"
 state_write analytics_baidu "$BAIDU"
@@ -804,7 +816,7 @@ state_write analytics_baidu "$BAIDU"
 say ""
 say "  确认一下："
 say "    目录：$APP_DIR"
-say "    端口：$PORT"
+say "    端口：$PORT$([ -z "$(state_read bind '')" ] || printf '（只绑 %s）' "$(state_read bind '')")"
 say "    模式：$([ "$MODE" = "build" ] && echo 本地构建 || echo 官方镜像)"
 say "    统计：$([ -n "$GA4" ] || [ -n "$BAIDU" ] && echo 开 || echo 关)"
 askyn "开始部署？" "y" || { say "取消"; exit 1; }
@@ -812,7 +824,11 @@ askyn "开始部署？" "y" || { say "取消"; exit 1; }
 run_container
 
 say ""
-ok "完事。访问地址：http://<这台机器的IP>:$PORT/"
+if [ -n "$(state_read bind '')" ] && [ "$(state_read bind '')" != "0.0.0.0" ]; then
+  ok "完事。端口只绑 $(state_read bind ''):${PORT}，对外要靠前面的反代（菜单 5，或你自己的反代）"
+else
+  ok "完事。访问地址：http://<这台机器的IP>:$PORT/"
+fi
 say ""
 say "${BLD}以后要更新：回这个菜单选 2（一条命令：$(self_cmd) --update）${RST}"
 say "用户数据都在浏览器里，服务器上没有任何持久数据 —— 怎么备份迁移看菜单 8。"
